@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
+import android.opengl.Matrix
+import me.magnum.melonds.common.opengl.ScreenRotationShaderProgramSource
 import me.magnum.melonds.domain.model.render.FrameRenderEvent
 import me.magnum.melonds.ui.ExternalRenderer
 import me.magnum.melonds.domain.model.Rect
@@ -53,7 +55,7 @@ class ExternalLayoutRender(
     private var topOnTop: Boolean = false,
     private var bottomOnTop: Boolean = false,
     private var background: RuntimeBackground = RuntimeBackground.None,
-) : GLSurfaceView.Renderer, ExternalRenderer {
+) : GLSurfaceView.Renderer, ExternalRenderer() {
 
     companion object {
         private const val TOTAL_SCREEN_HEIGHT = 384
@@ -83,6 +85,8 @@ class ExternalLayoutRender(
     private var isBackgroundPositionDirty = false
     private var backgroundWidth = 0
     private var backgroundHeight = 0
+    private val projectionMatrix = FloatArray(16)
+    private var displayRotation = 0f;
 
     fun updateLayout(
         top: Rect?,
@@ -141,10 +145,14 @@ class ExternalLayoutRender(
         }
     }
 
+    override fun updateExternalDisplayOrientation(orientation: Float) {
+        this.displayRotation = orientation
+        this.shader = grabCorrectShader(orientation, videoFiltering)
+        updateViewport()
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        shader = ShaderFactory.createShaderProgram(
-            VideoFilterShaderProvider.getShaderSource(videoFiltering)
-        )
+        shader = grabCorrectShader(displayRotation, videoFiltering)
 
         val textures = IntArray(1)
         GLES30.glGenTextures(1, textures, 0)
@@ -155,7 +163,11 @@ class ExternalLayoutRender(
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
 
-        backgroundShader = ShaderFactory.createShaderProgram(ShaderProgramSource.BackgroundShader)
+        backgroundShader = if(displayRotation == 0f) {
+            ShaderFactory.createShaderProgram(ShaderProgramSource.BackgroundShader)
+        } else {
+            ShaderFactory.createShaderProgram(ScreenRotationShaderProgramSource.BackgroundShader)
+        }
         val lineRelativeSize = 1f / (TOTAL_SCREEN_HEIGHT + 1).toFloat()
         val topUvs = floatArrayOf(
             0f, 0.5f - lineRelativeSize,
@@ -184,13 +196,21 @@ class ExternalLayoutRender(
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        GLES30.glViewport(0, 0, width, height)
         viewWidth = width
         viewHeight = height
+        updateViewport()
         updateBuffers()
         synchronized(backgroundLock) {
+            mustLoadBackground = true
             isBackgroundPositionDirty = true
         }
+    }
+
+    private fun updateViewport() {
+        Matrix.setIdentityM(projectionMatrix, 0)
+        Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
+        Matrix.rotateM(projectionMatrix, 0, displayRotation, 0f, 0f, 1f)
+        GLES30.glViewport(0, 0, viewWidth, viewHeight)
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -215,6 +235,9 @@ class ExternalLayoutRender(
             GLES30.glBlendColor(0f, 0f, 0f, topAlpha)
             GLES30.glBlendFunc(GLES30.GL_CONSTANT_ALPHA, GLES30.GL_ONE_MINUS_CONSTANT_ALPHA)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 6)
+            if(displayRotation != 0f) {
+                GLES30.glUniformMatrix4fv(shader.uniformMvp, 1, false, projectionMatrix, 0)
+            }
             GLES30.glDisable(GLES30.GL_BLEND)
         }
         posBottom?.let { buf ->
@@ -228,6 +251,9 @@ class ExternalLayoutRender(
             GLES30.glBlendColor(0f, 0f, 0f, bottomAlpha)
             GLES30.glBlendFunc(GLES30.GL_CONSTANT_ALPHA, GLES30.GL_ONE_MINUS_CONSTANT_ALPHA)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 6)
+            if(displayRotation != 0f) {
+                GLES30.glUniformMatrix4fv(shader.uniformMvp, 1, false, projectionMatrix, 0)
+            }
             GLES30.glDisable(GLES30.GL_BLEND)
         }
     }
@@ -248,9 +274,7 @@ class ExternalLayoutRender(
         this.videoFiltering = videoFiltering
         if (this::shader.isInitialized) {
             shader.delete()
-            shader = ShaderFactory.createShaderProgram(
-                VideoFilterShaderProvider.getShaderSource(videoFiltering)
-            )
+            shader = grabCorrectShader(displayRotation, videoFiltering)
         }
     }
 
@@ -278,6 +302,9 @@ class ExternalLayoutRender(
         GLES30.glVertexAttribPointer(backgroundShader.attribPos, 2, GLES30.GL_FLOAT, false, 0, backgroundPosBuffer)
         GLES30.glVertexAttribPointer(backgroundShader.attribUv, 2, GLES30.GL_FLOAT, false, 0, backgroundUvBuffer)
         GLES30.glUniform1i(backgroundShader.uniformTex, 0)
+        if(displayRotation != 0f) {
+            GLES30.glUniformMatrix4fv(shader.uniformMvp, 1, false, projectionMatrix, 0)
+        }
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, indices)
     }
 

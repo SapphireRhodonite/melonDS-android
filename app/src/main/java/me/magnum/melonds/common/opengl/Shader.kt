@@ -11,12 +11,14 @@ class Shader(
     val attribUv: Int
     val attribPos: Int
     val uniformTex: Int
+    val uniformMvp: Int
 
     init {
         GLES30.glUseProgram(programId)
         attribUv = GLES30.glGetAttribLocation(programId, "vUV")
         attribPos = GLES30.glGetAttribLocation(programId, "vPos")
         uniformTex = GLES30.glGetUniformLocation(programId, "tex")
+        uniformMvp = GLES30.glGetUniformLocation(programId, "uMVPMatrix")
         GLES30.glUseProgram(0)
     }
 

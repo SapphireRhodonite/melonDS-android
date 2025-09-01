@@ -34,6 +34,7 @@ import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.ControllerConfiguration
 import me.magnum.melonds.domain.model.DsExternalScreen
 import me.magnum.melonds.domain.model.EmulatorConfiguration
+import me.magnum.melonds.domain.model.ExternalDisplayOrientation
 import me.magnum.melonds.domain.model.FirmwareConfiguration
 import me.magnum.melonds.domain.model.FpsCounterPosition
 import me.magnum.melonds.domain.model.MacAddress
@@ -308,6 +309,11 @@ class SharedPreferencesSettingsRepository(
 
     override fun isExternalDisplayKeepAspectRatioEnabled(): Boolean {
         return preferences.getBoolean("external_display_keep_ratio", false)
+    }
+
+    override fun getExternalDisplayOrientation(): ExternalDisplayOrientation {
+        val externalDisplayOrientationPreference = preferences.getString("external_display_orientation", "FOLLOW_SYSTEM")!!
+        return ExternalDisplayOrientation.valueOf(externalDisplayOrientationPreference)
     }
 
     override fun getDSiCameraSource(): DSiCameraSourceType {

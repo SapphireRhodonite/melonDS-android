@@ -1,18 +1,16 @@
 package me.magnum.melonds.common.opengl
 
-open class ShaderProgramSource protected constructor(open var textureFiltering: TextureFiltering, open var vertexShaderSource: String, open var fragmentShaderSource: String) {
-    enum class TextureFiltering {
-        NEAREST,
-        LINEAR
-    }
+open class ScreenRotationShaderProgramSource protected constructor(override var textureFiltering: TextureFiltering, override var vertexShaderSource: String, override var fragmentShaderSource: String) :
+    ShaderProgramSource(textureFiltering, vertexShaderSource, fragmentShaderSource) {
 
     companion object {
         private const val DEFAULT_VERT_SHADER = "attribute vec2 vUV;\n" +
                 "attribute vec2 vPos;\n" +
                 "varying vec2 uv;\n" +
+                "uniform mat4 uMVPMatrix;\n" +
                 "void main()\n" +
                 "{\n" +
-                "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                "    gl_Position = uMVPMatrix * vec4(vPos, 0.0, 1.0);\n" +
                 "    uv = vUV;\n" +
                 "}"
 
@@ -25,7 +23,7 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                 "    gl_FragColor = vec4(color.bgr, 1);\n" +
                 "}"
 
-        val BackgroundShader = ShaderProgramSource(
+        val BackgroundShader = ScreenRotationShaderProgramSource(
             TextureFiltering.LINEAR,
             DEFAULT_VERT_SHADER,
             "precision mediump float;\n" +
@@ -38,13 +36,13 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                     "}"
         )
 
-        val NoFilterShader = ShaderProgramSource(
+        val NoFilterShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
             DEFAULT_VERT_SHADER,
             DEFAULT_FRAG_SHADER
         )
 
-        val LinearShader = ShaderProgramSource(
+        val LinearShader = ScreenRotationShaderProgramSource(
             TextureFiltering.LINEAR,
             DEFAULT_VERT_SHADER,
             DEFAULT_FRAG_SHADER
@@ -52,15 +50,16 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
 
         // Author: Gigaherz
         // License: Public domain
-        val LcdShader = ShaderProgramSource(
+        val LcdShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
                 "attribute vec2 vPos;\n" +
                     "attribute vec2 vUV;\n" +
                     "varying vec2 uv;\n" +
                     "varying vec2 omega;\n" +
+                    "uniform mat4 uMVPMatrix;\n" +
                     "" +
                     "void main() {\n" +
-                    "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                    "    gl_Position = uMVPMatrix * vec4(vPos, 0.0, 1.0);\n" +
                     "    uv = vUV;\n" +
                     "    omega = 3.141592654 * 2.0 * vec2(256, 384);\n" +
                     "}",
@@ -91,19 +90,20 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
 
         // Author: Themaister
         // This code is hereby placed in the public domain.
-        val ScanlinesShader = ShaderProgramSource(
+        val ScanlinesShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
                 "attribute vec2 vPos;\n" +
                     "attribute vec2 vUV;\n" +
                     "varying vec2 uv;\n" +
                     "varying vec2 omega;\n" +
+                    "uniform mat4 uMVPMatrix;\n" +
                     "" +
                     "vec2 inputSize = vec2(256, 384);\n" + // What is this?
                     "vec2 outputSize = vec2(256, 384);\n" + // What is this?
                     "" +
                     "void main()\n" +
                     "{\n" +
-                    "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                    "    gl_Position = uMVPMatrix + vec4(vPos, 0.0, 1.0);\n" +
                     "    uv = vUV;\n" +
                     "    vec2 textureSize = vec2(256, 384);\n" +
                     "    omega = vec2(3.1415 * outputSize.x * textureSize.x / inputSize.x, 2.0 * 3.1415 * textureSize.y);\n" +
@@ -147,11 +147,12 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
         // You should have received a copy of the GNU General Public License
         // along with this program; if not, write to the Free Software
         // Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-        val XbrShader = ShaderProgramSource(
+        val XbrShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
                 "attribute vec2 vPos;\n" +
                     "attribute vec2 vUV;\n" +
                     "varying vec2 uv[3];\n" +
+                    "uniform mat4 uMVPMatrix;\n" +
                     "" +
                     "void main() {\n" +
                     "    vec2 ps = 1.0 / vec2(256, 384);\n" +
@@ -159,7 +160,7 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                     "    uv[1] = vec2(0.0, -ps.y);\n" +
                     "    uv[2] = vec2(-ps.x, 0.0);\n" +
                     "" +
-                    "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                    "    gl_Position = uMVPMatrix * vec4(vPos, 0.0, 1.0);\n" +
                     "}",
             "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
                     "precision highp float;\n" +
@@ -210,11 +211,12 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                     "}"
         )
 
-        val Hq2xShader = ShaderProgramSource(
+        val Hq2xShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
                 "attribute vec2 vPos;\n" +
                     "attribute vec2 vUV;\n" +
                     "varying vec4 uv[5];\n" +
+                    "uniform mat4 uMVPMatrix;\n" +
                     "" +
                     "void main() {\n" +
                     "    vec2 dg1 = 0.5 / vec2(256, 384);\n" +
@@ -232,7 +234,7 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                     "    uv[4].xy = vUV + dg2;\n" +
                     "    uv[4].zw = vUV - dx;\n" +
                     "" +
-                    "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                    "    gl_Position = uMVPMatrix * vec4(vPos, 0.0, 1.0);\n" +
                     "}",
             "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
                     "precision highp float;\n" +
@@ -303,11 +305,12 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
         // You should have received a copy of the GNU General Public License
         // along with this program; if not, write to the Free Software
         // Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-        val Hq4xShader = ShaderProgramSource(
+        val Hq4xShader = ScreenRotationShaderProgramSource(
             TextureFiltering.NEAREST,
                 "attribute vec2 vPos;\n" +
                     "attribute vec2 vUV;\n" +
                     "varying vec4 uv[7];\n" +
+                    "uniform mat4 uMVPMatrix;\n" +
                     "" +
                     "void main()\n" +
                     "{\n" +
@@ -318,7 +321,7 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
                     "    vec2 ddx = vec2(dg1.x, 0.0);\n" +
                     "    vec2 ddy = vec2(0.0, dg1.y);\n" +
                     "" +
-                    "    gl_Position = vec4(vPos, 0.0, 1.0);\n" +
+                    "    gl_Position = uMVPMatrix * vec4(vPos, 0.0, 1.0);\n" +
                     "    uv[0].xy = vUV;\n" +
                     "    uv[1].xy = vUV - sd1;\n" +
                     "    uv[2].xy = vUV - sd2;\n" +
@@ -395,7 +398,7 @@ open class ShaderProgramSource protected constructor(open var textureFiltering: 
 
         // Fragment shader based on "Improved texture interpolation" by Iñigo Quílez
         // Original description: http://www.iquilezles.org/www/articles/texture/texture.htm
-        val QuilezShader = ShaderProgramSource(
+        val QuilezShader = ScreenRotationShaderProgramSource(
             TextureFiltering.LINEAR,
             DEFAULT_VERT_SHADER,
             "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +

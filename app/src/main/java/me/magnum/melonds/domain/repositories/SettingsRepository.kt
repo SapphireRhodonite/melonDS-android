@@ -83,6 +83,7 @@ interface SettingsRepository {
     fun setExternalLayoutId(layoutId: UUID)
     fun setExternalDisplayScreen(screen: DsExternalScreen)
     fun setExternalDisplayKeepAspectRatioEnabled(enabled: Boolean)
+    fun getExternalDisplayOrientation(): ExternalDisplayOrientation
 
     fun observeRenderConfiguration(): Flow<RendererConfiguration>
 }

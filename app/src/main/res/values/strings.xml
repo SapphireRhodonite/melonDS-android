@@ -410,6 +410,10 @@
     <string name="achievement_unlocked">Achievement unlocked!</string>
     <string name="achievement_missable">Missable</string>
     <string name="achievement_missable_description">This achievement can be missed during a playthrough</string>
+    <string name="external_display_orientation">External Display Orientation</string>
+    <string name="external_display_orientation_follow_system">Follow System</string>
+    <string name="external_display_orientation_portrait">Portrait</string>
+    <string name="external_display_orientation_portrait_upside_down">Portrait, upside down</string>
 
     <string-array name="fast_forward_speed_multiplier_options">
         <item>Unlimited</item>
@@ -504,6 +508,12 @@
         <item>@string/top_screen</item>
         <item>@string/bottom_screen</item>
         <item>@string/custom_layout</item>
+    </string-array>
+
+    <string-array name="external_display_orientation_options">
+        <item>@string/external_display_orientation_follow_system</item>
+        <item>@string/external_display_orientation_portrait</item>
+        <item>@string/external_display_orientation_portrait_upside_down</item>
     </string-array>
 
     <string-array name="audio_interpolation_options">

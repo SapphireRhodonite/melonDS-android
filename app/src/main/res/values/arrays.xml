@@ -62,9 +62,15 @@
     </string-array>
 
     <string-array name="external_display_screen_values">
-        <item>top</item>Add commentMore actions
+        <item>top</item>
         <item>bottom</item>
         <item>custom</item>
+    </string-array>
+
+    <string-array name="external_display_orientation_values">
+        <item>FOLLOW_SYSTEM</item>
+        <item>PORTRAIT</item>
+        <item>PORTRAIT_UPSIDE_DOWN</item>
     </string-array>
 
     <string-array name="audio_interpolation_values">

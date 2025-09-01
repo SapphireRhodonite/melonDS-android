@@ -852,6 +852,7 @@ class EmulatorActivity : AppCompatActivity() {
                     viewModel.runtimeRendererConfiguration.value?.videoFiltering
                         ?: VideoFiltering.NONE
                 )
+                externalScreenRender?.updateExternalDisplayOrientation(viewModel.getExternalDisplayOrientation().orientation)
             }
         }
     }
@@ -1099,6 +1100,7 @@ class EmulatorActivity : AppCompatActivity() {
             viewModel.runtimeRendererConfiguration.value?.videoFiltering
                 ?: VideoFiltering.NONE
         )
+        externalScreenRender?.updateExternalDisplayOrientation(viewModel.getExternalDisplayOrientation().orientation)
     }
 
     private fun setupInputHandling() {

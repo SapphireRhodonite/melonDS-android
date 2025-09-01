@@ -51,6 +51,15 @@
         android:title="@string/external_screen_layout"
         app:iconSpaceReserved="false" />
 
+    <ListPreference
+        android:key="external_display_orientation"
+        android:title="@string/external_display_orientation"
+        android:summary="%s"
+        app:iconSpaceReserved="false"
+        android:entries="@array/external_display_orientation_options"
+        android:entryValues="@array/external_display_orientation_values"
+        android:defaultValue="@string/external_display_orientation_follow_system"/>
+
     <Preference
         android:key="input_layouts"
         android:title="@string/internal_screen_layout"

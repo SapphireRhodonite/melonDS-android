@@ -41,6 +41,7 @@ import me.magnum.melonds.common.runtime.ScreenshotFrameBufferProvider
 import me.magnum.melonds.domain.model.Cheat
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.DsExternalScreen
+import me.magnum.melonds.domain.model.ExternalDisplayOrientation
 import me.magnum.melonds.domain.model.FpsCounterPosition
 import me.magnum.melonds.domain.model.RomInfo
 import me.magnum.melonds.domain.model.RuntimeBackground
@@ -693,6 +694,10 @@ class EmulatorViewModel @Inject constructor(
 
     fun setExternalDisplayKeepAspectRatioEnabled(enabled: Boolean) {
         settingsRepository.setExternalDisplayKeepAspectRatioEnabled(enabled)
+    }
+
+    fun getExternalDisplayOrientation(): ExternalDisplayOrientation {
+        return settingsRepository.getExternalDisplayOrientation()
     }
 
     private suspend fun getRomEnabledCheats(romInfo: RomInfo): List<Cheat> {

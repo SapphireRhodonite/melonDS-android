@@ -2,6 +2,7 @@ package me.magnum.melonds.ui
 
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import android.opengl.Matrix;
 import me.magnum.melonds.common.opengl.Shader
 import me.magnum.melonds.common.opengl.ShaderFactory
 import me.magnum.melonds.common.opengl.ShaderProgramSource
@@ -31,7 +32,7 @@ import me.magnum.melonds.domain.model.DsExternalScreen
  */
 class ExternalScreenRender(
     private val screen: DsExternalScreen
-) : GLSurfaceView.Renderer, ExternalRenderer {
+) : GLSurfaceView.Renderer, ExternalRenderer() {
 
     companion object {
         private const val TOTAL_SCREEN_HEIGHT = 384
@@ -47,10 +48,18 @@ class ExternalScreenRender(
     private var surfaceHeight = 0
     private var keepAspectRatio = false
 
+    private var displayRotation = 0f
+
+    private val projectionMatrix = FloatArray(16)
+
+    override fun updateExternalDisplayOrientation(orientation: Float) {
+        this.displayRotation = orientation
+        shader = grabCorrectShader(orientation, videoFiltering)
+        updateViewport()
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        shader = ShaderFactory.createShaderProgram(
-            VideoFilterShaderProvider.getShaderSource(videoFiltering)
-        )
+        shader = grabCorrectShader(displayRotation, videoFiltering)
 
         val coords = floatArrayOf(
             -1f, -1f,
@@ -109,6 +118,9 @@ class ExternalScreenRender(
         GLES30.glVertexAttribPointer(shader.attribPos, 2, GLES30.GL_FLOAT, false, 0, posBuffer)
         GLES30.glVertexAttribPointer(shader.attribUv, 2, GLES30.GL_FLOAT, false, 0, uvBuffer)
         GLES30.glUniform1i(shader.uniformTex, 0)
+        if(displayRotation != 0f) {
+            GLES30.glUniformMatrix4fv(shader.uniformMvp, 1, false, projectionMatrix, 0)
+        }
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, posBuffer.capacity() / 2)
     }
 
@@ -123,17 +135,34 @@ class ExternalScreenRender(
 
     private fun updateViewport() {
         if (surfaceWidth == 0 || surfaceHeight == 0) return
+
+        Matrix.setIdentityM(projectionMatrix, 0)
+        Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
+        Matrix.rotateM(projectionMatrix, 0, displayRotation, 0f, 0f, 1f)
+
         if (keepAspectRatio) {
             val dsRatio = 256f / 192f
             val viewRatio = surfaceWidth.toFloat() / surfaceHeight
-            if (viewRatio > dsRatio) {
-                val newWidth = (surfaceHeight * dsRatio).toInt()
-                val x = (surfaceWidth - newWidth) / 2
-                GLES30.glViewport(x, 0, newWidth, surfaceHeight)
+            if (displayRotation != 0f) {
+                if (viewRatio > dsRatio) {
+                    val newWidth = (surfaceWidth * dsRatio).toInt()
+                    val x = (newWidth - surfaceHeight) / 2
+                    GLES30.glViewport(x,0, newWidth, surfaceHeight)
+                } else {
+                    val newHeight = (surfaceHeight / dsRatio).toInt()
+                    val y = (newHeight - surfaceWidth) / 2
+                    GLES30.glViewport(0, y, surfaceWidth, newHeight)
+                }
             } else {
-                val newHeight = (surfaceWidth / dsRatio).toInt()
-                val y = (surfaceHeight - newHeight) / 2
-                GLES30.glViewport(0, y, surfaceWidth, newHeight)
+                if (viewRatio > dsRatio) {
+                    val newWidth = (surfaceHeight * dsRatio).toInt()
+                    val x = (surfaceWidth - newWidth) / 2
+                    GLES30.glViewport(x, 0, newWidth, surfaceHeight)
+                } else {
+                    val newHeight = (surfaceWidth / dsRatio).toInt()
+                    val y = (surfaceHeight - newHeight) / 2
+                    GLES30.glViewport(0, y, surfaceWidth, newHeight)
+                }
             }
         } else {
             GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
@@ -153,9 +182,7 @@ class ExternalScreenRender(
         this.videoFiltering = videoFiltering
         if (this::shader.isInitialized) {
             shader.delete()
-            shader = ShaderFactory.createShaderProgram(
-                VideoFilterShaderProvider.getShaderSource(videoFiltering)
-            )
+            shader = grabCorrectShader(displayRotation, videoFiltering)
         }
     }
 }
