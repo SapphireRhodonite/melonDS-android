@@ -146,11 +146,11 @@ class ExternalScreenRender(
             if (displayRotation != 0f) {
                 if (viewRatio > dsRatio) {
                     val newWidth = (surfaceWidth * dsRatio).toInt()
-                    val x = (newWidth - surfaceHeight) / 2
+                    val x = (surfaceWidth - newWidth) / 2
                     GLES30.glViewport(x,0, newWidth, surfaceHeight)
                 } else {
                     val newHeight = (surfaceHeight / dsRatio).toInt()
-                    val y = (newHeight - surfaceWidth) / 2
+                    val y = (surfaceHeight - newHeight) / 2
                     GLES30.glViewport(0, y, surfaceWidth, newHeight)
                 }
             } else {
