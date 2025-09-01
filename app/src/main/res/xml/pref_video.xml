@@ -58,7 +58,7 @@
         app:iconSpaceReserved="false"
         android:entries="@array/external_display_orientation_options"
         android:entryValues="@array/external_display_orientation_values"
-        android:defaultValue="@string/external_display_orientation_follow_system"/>
+        android:defaultValue="FOLLOW_SYSTEM"/>
 
     <Preference
         android:key="input_layouts"
