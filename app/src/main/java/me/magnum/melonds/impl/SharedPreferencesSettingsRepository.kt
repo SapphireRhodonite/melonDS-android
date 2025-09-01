@@ -198,6 +198,10 @@ class SharedPreferencesSettingsRepository(
         return SizeUnit.MB(128) * 2.toDouble().pow(cacheSizeStepPreference).toLong()
     }
 
+    override fun showRomFileName(): Boolean {
+        return preferences.getBoolean("show_rom_filename", false)
+    }
+
     override fun getDefaultConsoleType(): ConsoleType {
         val consoleTypePreference = preferences.getString("console_type", "ds")!!
         return enumValueOfIgnoreCase(consoleTypePreference)
@@ -592,6 +596,12 @@ class SharedPreferencesSettingsRepository(
     override fun observeRomIconFiltering(): Flow<RomIconFiltering> {
         return getOrCreatePreferenceSharedFlow("rom_icon_filtering") {
             getRomIconFiltering()
+        }
+    }
+
+    override fun observeShowRomFileName(): Flow<Boolean> {
+        return getOrCreatePreferenceSharedFlow("show_rom_filename") {
+            showRomFileName()
         }
     }
 

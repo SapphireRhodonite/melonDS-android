@@ -140,6 +140,8 @@ class EmulatorViewModel @Inject constructor(
     private val _uiEvent = EventSharedFlow<EmulatorUiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
 
+    private var currentRom: Rom? = null
+
     init {
         viewModelScope.launch {
             _layout.filterNotNull().collect {
@@ -186,6 +188,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     private suspend fun launchRom(rom: Rom, glContext: Long) = coroutineScope {
+        currentRom = rom
         startEmulatorSession(EmulatorSession.SessionType.RomSession(rom))
         startObservingBackground()
         startObservingExternalBackground()
@@ -553,6 +556,7 @@ class EmulatorViewModel @Inject constructor(
         _background.value = RuntimeBackground.None
         _externalBackground.value = RuntimeBackground.None
         _layout.value = null
+        currentRom = null
     }
 
     private fun startObservingAchievementEvents() {
@@ -581,10 +585,24 @@ class EmulatorViewModel @Inject constructor(
     }
 
     private fun startObservingExternalBackground() {
-        sessionCoroutineScope.launch {
+        val romLayoutId = currentRom?.config?.externalLayoutId
+        val layoutFlow = if (romLayoutId == null) {
             settingsRepository.observeExternalLayoutId().asFlow()
                 .onStart { emit(settingsRepository.getExternalLayoutId()) }
                 .flatMapLatest { layoutsRepository.observeLayout(it) }
+        } else {
+            layoutsRepository.observeLayout(romLayoutId)
+                .onCompletion {
+                    emitAll(
+                        settingsRepository.observeExternalLayoutId().asFlow()
+                            .onStart { emit(settingsRepository.getExternalLayoutId()) }
+                            .flatMapLatest { layoutsRepository.observeLayout(it) }
+                    )
+                }
+        }
+
+        sessionCoroutineScope.launch {
+            layoutFlow
                 .map { layout ->
                     val entry = layout.layoutVariants.entries.firstOrNull()
                     entry?.let { loadBackground(it.value.backgroundId, it.value.backgroundMode) }
@@ -592,6 +610,11 @@ class EmulatorViewModel @Inject constructor(
                 }
                 .collect(_externalBackground)
         }
+    }
+
+    fun getExternalLayoutId(): UUID {
+        val romLayoutId = currentRom?.config?.externalLayoutId
+        return romLayoutId ?: settingsRepository.getExternalLayoutId()
     }
 
     private fun startObservingLayoutForRom(rom: Rom) {
@@ -681,7 +704,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun getExternalDisplayScreen(): DsExternalScreen {
-        return settingsRepository.getExternalDisplayScreen()
+        return currentRom?.config?.externalScreen ?: settingsRepository.getExternalDisplayScreen()
     }
 
     fun setExternalDisplayScreen(screen: DsExternalScreen) {
