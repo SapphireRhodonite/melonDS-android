@@ -47,6 +47,45 @@ enum class EmulatorEventType(val event: Int) {
     EventRAAchievementProgressUpdated(203),
 
     /**
+     * RA core game completed/mastered. Data:
+     * * subset ID (`i64`)
+     */
+    EventRAGameCompleted(204),
+
+    /**
+     * RA non-core subset completed/mastered. Data:
+     * * subset ID (`i64`)
+     */
+    EventRASubsetCompleted(205),
+
+    /**
+     * RA server error. Data:
+     * * related ID (`i64`)
+     * * result code (`i32`)
+     * * API string size (`i32`)
+     * * API string (`u8[32]`)
+     * * message string size (`i32`)
+     * * message string (`u8[64]`)
+     */
+    EventRAServerError(206),
+
+    /**
+     * RA runtime disconnected. No data.
+     */
+    EventRADisconnected(207),
+
+    /**
+     * RA runtime reconnected. No data.
+     */
+    EventRAReconnected(208),
+
+    /**
+     * RA runtime fallback to legacy. Data:
+     * * fallback reason (`i32`)
+     */
+    EventRARuntimeFallback(209),
+
+    /**
      * RA leaderboard attempt started. Data:
      * * leaderboard ID (`i64`)
      */

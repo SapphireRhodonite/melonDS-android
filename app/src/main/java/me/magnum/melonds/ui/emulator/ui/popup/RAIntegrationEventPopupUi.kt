@@ -103,6 +103,22 @@ fun RAIntegrationEventUi(modifier: Modifier, event: RAIntegrationEvent) {
                         )
                     }
                 }
+                is RAIntegrationEvent.RuntimeFallback -> {
+                    Column {
+                        Text(
+                            text = stringResource(id = R.string.ra_runtime_fallback_title),
+                            style = MaterialTheme.typography.body2,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colors.error,
+                            maxLines = 2,
+                        )
+                        Text(
+                            text = event.reason,
+                            style = MaterialTheme.typography.body2,
+                            maxLines = 3,
+                        )
+                    }
+                }
             }
         }
     }

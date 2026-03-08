@@ -18,6 +18,12 @@ public:
     void onLeaderboardAttemptUpdated(long leaderboardId, std::string formattedValue) override;
     void onLeaderboardAttemptCanceled(long leaderboardId) override;
     void onLeaderboardAttemptCompleted(long leaderboardId, int value) override;
+    void onAchievementGameCompleted(long subsetId) override;
+    void onAchievementSubsetCompleted(long subsetId) override;
+    void onRetroAchievementsServerError(std::string api, long relatedId, int result, std::string message) override;
+    void onRetroAchievementsDisconnected() override;
+    void onRetroAchievementsReconnected() override;
+    void onRetroAchievementsRuntimeFallback(MelonDSAndroid::RetroAchievementsRuntimeFallbackReason reason) override;
 
 private:
     // Event type constants
@@ -29,6 +35,12 @@ private:
     static constexpr int EVENT_RA_ACHIEVEMENT_TRIGGERED = 201;
     static constexpr int EVENT_RA_ACHIEVEMENT_UNPRIMED = 202;
     static constexpr int EVENT_RA_ACHIEVEMENT_PROGRESS_UPDATED = 203;
+    static constexpr int EVENT_RA_GAME_COMPLETED = 204;
+    static constexpr int EVENT_RA_SUBSET_COMPLETED = 205;
+    static constexpr int EVENT_RA_SERVER_ERROR = 206;
+    static constexpr int EVENT_RA_DISCONNECTED = 207;
+    static constexpr int EVENT_RA_RECONNECTED = 208;
+    static constexpr int EVENT_RA_RUNTIME_FALLBACK = 209;
     static constexpr int EVENT_RA_LBOARD_ATTEMPT_STARTED = 210;
     static constexpr int EVENT_RA_LBOARD_ATTEMPT_UPDATED = 211;
     static constexpr int EVENT_RA_LBOARD_ATTEMPT_CANCELED = 212;

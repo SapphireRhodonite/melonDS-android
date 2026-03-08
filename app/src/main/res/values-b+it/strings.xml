@@ -95,7 +95,7 @@
     <string name="cant_load_empty_slot">Impossibile caricare uno stato vuoto</string>
     <string name="failed_reset_emulation">Reset dell\'emulazione fallito</string>
     <string name="save_states_not_supported">Il salvataggio dello stato non è supportato mentre è in esecuzione il firmware</string>
-    <string name="save_states_unavailable_ra_hardcore_enabled">Il salvataggio dello stato non è disponibile in modalità Hardcore</string>
+    <string name="load_states_unavailable_ra_hardcore_enabled">Il caricamento dei salvataggi di stato non è disponibile in modalità Hardcore</string>
     <string name="rewind_time_seconds">%1$ss</string> <!-- Ex: 43.56s -->
     <string name="rewind_time_minutes_seconds">%1$dm%2$ss</string> <!-- Ex: 2m37.93s -->
     <string name="rewind_not_enabled">Il riavvolgimento è disattivato</string>

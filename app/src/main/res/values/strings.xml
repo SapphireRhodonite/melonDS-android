@@ -99,12 +99,11 @@
     <string name="cant_load_empty_slot">Can\'t load an empty save state slot</string>
     <string name="failed_reset_emulation">Failed to reset emulation</string>
     <string name="save_states_not_supported">Save states are not supported while running the firmware</string>
-    <string name="save_states_unavailable_ra_hardcore_enabled">Save states are unavailable while Hardcore mode is enabled</string>
+    <string name="load_states_unavailable_ra_hardcore_enabled">Loading save states is unavailable while Hardcore mode is enabled</string>
     <string name="rewind_time_seconds">%1$ss</string> <!-- Ex: 43.56s -->
     <string name="rewind_time_minutes_seconds">%1$dm%2$ss</string> <!-- Ex: 2m37.93s -->
     <string name="rewind_not_enabled">Rewind is not enabled</string>
     <string name="rewind_unavailable_ra_hardcore_enabled">Rewind is unavailable while Hardcore mode is enabled</string>
-    <string name="fast_forward_unavailable_ra_hardcore_enabled">Fast-forward is unavailable while Hardcore mode is enabled</string>
     <string name="cheats_unavailable_ra_hardcore_enabled">Cheats are unavailable while Hardcore mode is enabled</string>
     <string name="no_image_selected">No image selected</string>
     <string name="failed_to_load_image">Failed to load image</string>
@@ -296,7 +295,7 @@
     <string name="enable_encore_mode">Enable encore mode</string>
     <string name="enable_encore_mode_summary">Allow re-earning already unlocked achievements when supported by the active set</string>
     <string name="hardcore_mode">Hardcore mode</string>
-    <string name="hardcore_mode_summary">Earn double the amount of points but you cannot use save states, cheats or slow-motion while playing</string>
+    <string name="hardcore_mode_summary">Earn double the amount of points but you cannot load save states, use cheats or slow-motion while playing</string>
     <string name="show_active_challenge_indicators">Show active challenge indicators</string>
     <string name="show_active_challenge_indicators_summary">Shows on-screen indicators while certain achievements can be earned</string>
     <string name="show_progress_indicators">Show progress indicators</string>
@@ -550,6 +549,13 @@
     <string name="game_has_no_achievements">This game has no achievements</string>
     <string name="achievements_failed_load">Failed to load achievements!</string>
     <string name="achievements_failed_load_tip">Make sure you are Online</string>
+    <string name="ra_runtime_fallback_title">RetroAchievements runtime fallback</string>
+    <string name="ra_runtime_fallback_login_timeout">rc_client login timed out. The emulator switched to the legacy runtime for this session.</string>
+    <string name="ra_runtime_fallback_login_failed">rc_client login failed. The emulator switched to the legacy runtime for this session.</string>
+    <string name="ra_runtime_fallback_load_timeout">rc_client game load timed out. The emulator switched to the legacy runtime for this session.</string>
+    <string name="ra_runtime_fallback_load_failed">rc_client game load failed. The emulator switched to the legacy runtime for this session.</string>
+    <string name="ra_runtime_fallback_performance">rc_client was too expensive for this device/session. The emulator switched to the legacy runtime for this session.</string>
+    <string name="ra_runtime_fallback_unknown">rc_client was unavailable. The emulator switched to the legacy runtime for this session.</string>
     <string name="achievement_unlocked">Achievement unlocked!</string>
     <string name="achievement_missable">Missable</string>
     <string name="achievement_missable_description">This achievement can be missed during a playthrough</string>

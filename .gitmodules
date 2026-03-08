@@ -1,3 +1,4 @@
 [submodule "melonDS-android-lib"]
 	path = melonDS-android-lib
 	url = https://github.com/SapphireRhodonite/melonDS-android-lib.git
+	branch = GBARumble_PR

@@ -506,6 +506,7 @@ class AndroidRetroAchievementsRepository(
 
         val message = buildString {
             append("event_type=").append(eventType)
+            append(" submit_path=").append("kotlin_api")
             fields.forEach { (key, value) ->
                 if (value != null) {
                     append(' ')

@@ -23,6 +23,7 @@ import me.magnum.melonds.domain.model.emulator.FirmwareLaunchResult
 import me.magnum.melonds.domain.model.emulator.RomLaunchResult
 import me.magnum.melonds.domain.model.retroachievements.GameAchievementData
 import me.magnum.melonds.domain.model.retroachievements.RAEvent
+import me.magnum.melonds.domain.model.retroachievements.RAEvent.RuntimeFallbackReason
 import me.magnum.melonds.domain.model.retroachievements.RARuntimeBridgeConfig
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.rom.config.RomGbaSlotConfig
@@ -76,6 +77,20 @@ class AndroidEmulatorManager(
                 )
                 achievementsSharedFlow.tryEmit(event)
             }
+            EmulatorEventType.EventRAGameCompleted -> achievementsSharedFlow.tryEmit(RAEvent.OnGameCompleted(data.getLong()))
+            EmulatorEventType.EventRASubsetCompleted -> achievementsSharedFlow.tryEmit(RAEvent.OnSubsetCompleted(data.getLong()))
+            EmulatorEventType.EventRAServerError -> {
+                val event = RAEvent.OnServerError(
+                    relatedId = data.getLong(),
+                    resultCode = data.getInt(),
+                    api = data.readBoundedString(),
+                    message = data.readBoundedString(),
+                )
+                achievementsSharedFlow.tryEmit(event)
+            }
+            EmulatorEventType.EventRADisconnected -> achievementsSharedFlow.tryEmit(RAEvent.OnDisconnected)
+            EmulatorEventType.EventRAReconnected -> achievementsSharedFlow.tryEmit(RAEvent.OnReconnected)
+            EmulatorEventType.EventRARuntimeFallback -> achievementsSharedFlow.tryEmit(RAEvent.OnRuntimeFallback(data.getRuntimeFallbackReason()))
             EmulatorEventType.EventRALeaderboardAttemptStarted -> achievementsSharedFlow.tryEmit(RAEvent.OnLeaderboardAttemptStarted(data.getLong()))
             EmulatorEventType.EventRALeaderboardAttemptUpdated -> {
                 val event = RAEvent.OnLeaderboardAttemptUpdated(
@@ -291,6 +306,17 @@ class AndroidEmulatorManager(
         val payload = ByteArray(safeLength)
         get(payload)
         return String(payload)
+    }
+
+    private fun ByteBuffer.getRuntimeFallbackReason(): RuntimeFallbackReason {
+        return when (getInt()) {
+            1 -> RuntimeFallbackReason.LOGIN_TIMEOUT
+            2 -> RuntimeFallbackReason.LOGIN_FAILED
+            3 -> RuntimeFallbackReason.LOAD_TIMEOUT
+            4 -> RuntimeFallbackReason.LOAD_FAILED
+            5 -> RuntimeFallbackReason.PERFORMANCE
+            else -> RuntimeFallbackReason.UNKNOWN
+        }
     }
 
     private fun getStopReason(internalReason: Int): EmulatorEvent.Stop.Reason? {

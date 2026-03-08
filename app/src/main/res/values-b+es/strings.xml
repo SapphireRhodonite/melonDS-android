@@ -84,7 +84,7 @@
     <string name="cant_load_empty_slot">No se puede cargar un espacio vacío</string>
     <string name="failed_reset_emulation">No se pudo restablecer la emulación</string>
     <string name="save_states_not_supported">Los estados de guardado no son compatibles mientras se ejecuta el firmware</string>
-    <string name="save_states_unavailable_ra_hardcore_enabled">Guardados no disponibles en modo Hardcore</string>
+    <string name="load_states_unavailable_ra_hardcore_enabled">Cargar save states no está disponible en modo Hardcore</string>
     <string name="rewind_time_seconds">%1$ss</string> <!-- Ej: 43,56s -->
     <string name="rewind_time_minutes_seconds">%1$dmin2$ss</string> <!-- Ej: 2min37,93s -->
     <string name="rewind_not_enabled">El rebobinado no está habilitado</string>

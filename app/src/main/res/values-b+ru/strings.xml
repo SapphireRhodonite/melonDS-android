@@ -95,7 +95,7 @@
     <string name="cant_load_empty_slot">Невозможно загрузить пустой слот сохранения</string>
     <string name="failed_reset_emulation">Не удалось перезапустить эмуляцию</string>
     <string name="save_states_not_supported">Сохранения недоступны во время запуска прошивки</string>
-    <string name="save_states_unavailable_ra_hardcore_enabled">Сохранения недоступны в режиме хардкора</string>
+    <string name="load_states_unavailable_ra_hardcore_enabled">Загрузка сохранений недоступна в режиме хардкора</string>
     <string name="rewind_time_seconds">%1$ss</string>
     <string name="rewind_time_minutes_seconds">%1$dm%2$ss</string>
     <string name="rewind_not_enabled">Обратная перемотка не включена</string>

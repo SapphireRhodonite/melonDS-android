@@ -97,3 +97,54 @@ void AndroidMelonEventMessenger::onLeaderboardAttemptCompleted(long leaderboardI
 
     MelonDSAndroid::fireEmulatorEvent(EVENT_RA_LBOARD_ATTEMPT_COMPLETED, sizeof(data), &data);
 }
+
+void AndroidMelonEventMessenger::onAchievementGameCompleted(long subsetId)
+{
+    int64_t subsetIdLong = (int64_t) subsetId;
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_GAME_COMPLETED, sizeof(subsetIdLong), &subsetIdLong);
+}
+
+void AndroidMelonEventMessenger::onAchievementSubsetCompleted(long subsetId)
+{
+    int64_t subsetIdLong = (int64_t) subsetId;
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_SUBSET_COMPLETED, sizeof(subsetIdLong), &subsetIdLong);
+}
+
+void AndroidMelonEventMessenger::onRetroAchievementsServerError(std::string api, long relatedId, int result, std::string message)
+{
+    struct {
+        int64_t relatedId;
+        int32_t result;
+        int32_t apiSize;
+        char api[32];
+        int32_t messageSize;
+        char message[64];
+    } data = {
+        .relatedId = (int64_t) relatedId,
+        .result = (int32_t) result,
+        .apiSize = (int32_t) std::min(api.size(), sizeof(data.api)),
+        .messageSize = (int32_t) std::min(message.size(), sizeof(data.message)),
+    };
+    std::memset(data.api, 0, sizeof(data.api));
+    std::memcpy(data.api, api.c_str(), (size_t) data.apiSize);
+    std::memset(data.message, 0, sizeof(data.message));
+    std::memcpy(data.message, message.c_str(), (size_t) data.messageSize);
+
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_SERVER_ERROR, sizeof(data), &data);
+}
+
+void AndroidMelonEventMessenger::onRetroAchievementsDisconnected()
+{
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_DISCONNECTED);
+}
+
+void AndroidMelonEventMessenger::onRetroAchievementsReconnected()
+{
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_RECONNECTED);
+}
+
+void AndroidMelonEventMessenger::onRetroAchievementsRuntimeFallback(MelonDSAndroid::RetroAchievementsRuntimeFallbackReason reason)
+{
+    int32_t reasonInt = (int32_t) reason;
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RA_RUNTIME_FALLBACK, sizeof(reasonInt), &reasonInt);
+}

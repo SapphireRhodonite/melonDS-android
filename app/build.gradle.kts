@@ -61,12 +61,10 @@ android {
     productFlavors {
         create("playStore") {
             dimension = "version"
-            versionNameSuffix = " PS"
         }
         create("gitHub") {
             dimension = "version"
             isDefault = true
-            versionNameSuffix = " GH"
         }
 
         create("prod") {
@@ -76,7 +74,6 @@ android {
         create("nightly") {
             dimension = "build"
             applicationIdSuffix = ".nightly"
-            versionNameSuffix = " (NIGHTLY)"
         }
     }
     externalNativeBuild {
