@@ -2,6 +2,7 @@ package me.magnum.melonds.ui.emulator
 
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import me.magnum.melonds.domain.model.retroachievements.RAEvent
 import me.magnum.melonds.domain.model.retroachievements.RAUserAchievement
@@ -14,6 +15,7 @@ import me.magnum.melonds.impl.retroachievements.offline.OfflineLedgerIntegrity
 import me.magnum.melonds.impl.retroachievements.offline.OfflineLedgerRepository
 import me.magnum.melonds.ui.common.achievements.ui.model.AchievementUiModel
 import me.magnum.melonds.ui.common.achievements.viewmodel.RetroAchievementsViewModel
+import me.magnum.melonds.ui.emulator.component.RetroAchievementsSubmissionHandler
 import me.magnum.melonds.ui.romdetails.model.AchievementBucketUiModel
 import javax.inject.Inject
 import kotlin.time.Clock
@@ -27,6 +29,7 @@ class EmulatorRetroAchievementsViewModel @Inject constructor(
     private val offlineLedgerRepository: OfflineLedgerRepository,
     private val emulatorSession: EmulatorSession,
     private val emulatorManager: EmulatorManager,
+    private val achievementsSubmissionHandler: RetroAchievementsSubmissionHandler,
 ) : RetroAchievementsViewModel(retroAchievementsRepository, settingsRepository) {
 
     private companion object {
@@ -90,8 +93,12 @@ class EmulatorRetroAchievementsViewModel @Inject constructor(
         runtimeBucketByAchievementId: Map<Long, AchievementBucketUiModel.Bucket>,
     ): List<AchievementBucketUiModel> {
         val now = Clock.System.now()
+        val pendingAchievements = achievementsSubmissionHandler.getPendingAchievementsFlow().firstOrNull() ?: emptyList()
         return retroAchievementsRepository.getRuntimeUserAchievements(achievements).groupingBy { runtimeAchievement ->
-            runtimeBucketByAchievementId[runtimeAchievement.userAchievement.achievement.id] ?: when {
+            when {
+                pendingAchievements.any { it.id == runtimeAchievement.userAchievement.achievement.id } -> AchievementBucketUiModel.Bucket.PendingSubmissions
+                runtimeBucketByAchievementId.containsKey(runtimeAchievement.userAchievement.achievement.id) ->
+                    runtimeBucketByAchievementId.getValue(runtimeAchievement.userAchievement.achievement.id)
                 runtimeAchievement.userAchievement.isUnlocked -> {
                     val recentlyUnlockedAchievement = recentlyUnlockedAchievements.firstOrNull { it.achievementId == runtimeAchievement.userAchievement.achievement.id }
                     if (recentlyUnlockedAchievement != null && (now - recentlyUnlockedAchievement.unlockedAt) < 10.minutes) {

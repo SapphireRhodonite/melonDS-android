@@ -105,6 +105,7 @@ import me.magnum.melonds.impl.retroachievements.offline.SmartSyncSkipReason
 import me.magnum.melonds.impl.retroachievements.offline.SmartSyncEngine
 import me.magnum.melonds.impl.layout.UILayoutProvider
 import me.magnum.melonds.impl.system.NetworkStatusProvider
+import me.magnum.melonds.ui.emulator.component.RetroAchievementsSubmissionHandler
 import me.magnum.melonds.ui.emulator.firmware.FirmwarePauseMenuOption
 import me.magnum.melonds.ui.emulator.model.RumbleEvent
 import me.magnum.melonds.ui.emulator.model.EmulatorState
@@ -161,6 +162,7 @@ class EmulatorViewModel @Inject constructor(
     private val uiLayoutProvider: UILayoutProvider,
     private val emulatorManager: EmulatorManager,
     private val emulatorSession: EmulatorSession,
+    private val retroAchievementsSubmissionHandler: RetroAchievementsSubmissionHandler,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -285,6 +287,8 @@ class EmulatorViewModel @Inject constructor(
 
     private val _raIntegrationEvent = EventSharedFlow<RAIntegrationEvent>()
     val integrationEvent = _raIntegrationEvent.asSharedFlow()
+
+    val pendingSubmissionsSummary = retroAchievementsSubmissionHandler.getPendingSubmissionsSummaryFlow()
 
     private val _uiEvent = EventSharedFlow<EmulatorUiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
@@ -883,6 +887,16 @@ class EmulatorViewModel @Inject constructor(
         screenshotFrameBufferProvider.clearBuffer()
     }
 
+    fun exitEmulator(force: Boolean = false) {
+        if (!force && retroAchievementsSubmissionHandler.hasPendingSubmissions()) {
+            _uiEvent.tryEmit(EmulatorUiEvent.ShowPendingSubmissionsDialog)
+            retroAchievementsSubmissionHandler.retrySubmissionsImmediately()
+            return
+        }
+
+        requestExitRom()
+    }
+
     private fun finalizeOfflineRetroAchievementsSessionIfNeeded() {
         val offlineSession = offlineRetroAchievementsSession ?: return
         offlineRetroAchievementsSession = null
@@ -1048,9 +1062,7 @@ class EmulatorViewModel @Inject constructor(
                     RomPauseMenuOption.PRESETS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowDualScreenPresets)
                     RomPauseMenuOption.RENDERER_DEBUG_CAPTURE -> dumpRendererDebugCapture()
                     RomPauseMenuOption.RESET -> resetEmulator()
-                    RomPauseMenuOption.EXIT -> {
-                        requestExitRom()
-                    }
+                    RomPauseMenuOption.EXIT -> exitEmulator()
                 }
             }
             is FirmwarePauseMenuOption -> {
@@ -2001,14 +2013,6 @@ class EmulatorViewModel @Inject constructor(
                     return@launch
                 }
 
-                _achievementsEvent.emit(RAEventUi.AchievementTriggered(achievement))
-                logRaTrace(
-                    "achievement_popup_emitted",
-                    "achievement_id" to achievementId,
-                    "source" to "runtime_trigger",
-                    "encore_enabled" to settingsRepository.isRetroAchievementsEncoreModeEnabled(),
-                )
-
                 val isHardcoreModeEnabled = emulatorSession.isRetroAchievementsHardcoreModeEnabled
                 if (isHardcoreModeEnabled) {
                     attemptSilentHardcoreReplayBeforeOnlineSubmission()
@@ -2019,31 +2023,7 @@ class EmulatorViewModel @Inject constructor(
                     "hardcore" to isHardcoreModeEnabled,
                     "game_id" to currentRetroAchievementsGameId,
                 )
-                retroAchievementsRepository.awardAchievement(achievement, isHardcoreModeEnabled).onSuccess {
-                    logRaTrace(
-                        "achievement_submit_success",
-                        "achievement_id" to achievementId,
-                        "hardcore" to isHardcoreModeEnabled,
-                        "awarded" to it.achievementAwarded,
-                    )
-                    if (it.achievementAwarded) {
-                        if (it.isSetMastered()) {
-                            showSetMastery(achievement.setId, isHardcoreModeEnabled)
-                        }
-                    }
-                    completeAchievementSubmissionTrace(
-                        achievementId,
-                        if (it.achievementAwarded) "submit_success" else "already_unlocked",
-                    )
-                }.onFailure { error ->
-                    logRaTrace(
-                        "achievement_submit_failed",
-                        "achievement_id" to achievementId,
-                        "hardcore" to isHardcoreModeEnabled,
-                        "error" to (error::class.simpleName ?: "Unknown"),
-                    )
-                    completeAchievementSubmissionTrace(achievementId, "submit_failed")
-                }
+                retroAchievementsSubmissionHandler.addPendingAchievementSubmission(achievement, isHardcoreModeEnabled)
             } else {
                 completeAchievementSubmissionTrace(achievementId, "achievement_missing")
             }
@@ -2578,39 +2558,13 @@ class EmulatorViewModel @Inject constructor(
                 attemptSilentHardcoreReplayBeforeOnlineSubmission()
             }
 
-            retroAchievementsRepository.submitLeaderboardEntry(completionEvent.leaderboardId, completionEvent.value).fold(
-                onSuccess = { submissionResponse ->
-                    logRaTrace(
-                        "leaderboard_submit_success",
-                        "leaderboard_id" to completionEvent.leaderboardId,
-                        "rank" to submissionResponse.rank,
-                    )
-                    retroAchievementsRepository.getLeaderboard(completionEvent.leaderboardId)?.let { leaderboard ->
-                        retroAchievementsRepository.getAchievementSetSummary(leaderboard.setId)?.let { setSummary ->
-                            val submissionEvent = RAEventUi.LeaderboardEntrySubmitted(
-                                leaderboardId = completionEvent.leaderboardId,
-                                title = submissionResponse.title,
-                                gameIcon = setSummary.iconUrl,
-                                formattedScore = submissionResponse.formattedScore,
-                                rank = submissionResponse.rank,
-                                numberOfEntries = submissionResponse.numEntries,
-                            )
-                            _achievementsEvent.emit(submissionEvent)
-                        }
-                    }
-                    completeLeaderboardSubmissionTrace(completionEvent.leaderboardId, "submit_success")
-                },
-                onFailure = { error ->
-                    logRaTrace(
-                        "leaderboard_submit_failed",
-                        "leaderboard_id" to completionEvent.leaderboardId,
-                        "error" to (error::class.simpleName ?: "Unknown"),
-                    )
-                    completeLeaderboardSubmissionTrace(completionEvent.leaderboardId, "submit_failed")
-                    // Submission failed. Submit a cancellation event anyway to ensure the attempt indicator is dismissed
-                    _achievementsEvent.emit(RAEventUi.LeaderboardAttemptCancelled(completionEvent.leaderboardId))
-                },
-            )
+            retroAchievementsRepository.getLeaderboard(completionEvent.leaderboardId)?.let { leaderboard ->
+                retroAchievementsSubmissionHandler.addPendingLeaderboardSubmission(
+                    leaderboard = leaderboard,
+                    value = completionEvent.value,
+                    formattedValue = completionEvent.formattedValue,
+                )
+            }
         }
     }
 
@@ -2755,6 +2709,46 @@ class EmulatorViewModel @Inject constructor(
                         }
 
                         emulatorManager.setupRetroAchievements(achievementData, runtimeConfig)
+                        launch {
+                            retroAchievementsSubmissionHandler.startEmulatorSession().collect { event ->
+                                when (event) {
+                                    is RAEventUi.AchievementTriggered -> {
+                                        logRaTrace(
+                                            "achievement_submit_success",
+                                            "achievement_id" to event.achievement.id,
+                                            "hardcore" to emulatorSession.isRetroAchievementsHardcoreModeEnabled,
+                                            "awarded" to true,
+                                        )
+                                        completeAchievementSubmissionTrace(event.achievement.id, "submit_success")
+                                    }
+                                    is RAEventUi.LeaderboardEntrySubmitted -> {
+                                        logRaTrace(
+                                            "leaderboard_submit_success",
+                                            "leaderboard_id" to event.leaderboardId,
+                                            "rank" to event.rank,
+                                        )
+                                        completeLeaderboardSubmissionTrace(event.leaderboardId, "submit_success")
+                                    }
+                                    is RAEventUi.LeaderboardEntrySubmitError -> {
+                                        logRaTrace(
+                                            "leaderboard_submit_failed",
+                                            "leaderboard_id" to event.leaderboardId,
+                                            "error" to "RetryQueued",
+                                        )
+                                    }
+                                    is RAEventUi.AchievementTriggerError -> {
+                                        logRaTrace(
+                                            "achievement_submit_failed",
+                                            "achievement_id" to event.achievement.id,
+                                            "hardcore" to emulatorSession.isRetroAchievementsHardcoreModeEnabled,
+                                            "error" to "RetryQueued",
+                                        )
+                                    }
+                                    else -> Unit
+                                }
+                                _achievementsEvent.emit(event)
+                            }
+                        }
                         isRetroAchievementsOnlineSessionStarted = false
                         if (onlineBootstrap?.source == OnlineRetroAchievementsBootstrapSource.CACHE) {
                             launch {

@@ -75,7 +75,7 @@ class RAApi(
         private const val REQUEST_SUBMIT_LEADERBOARD_ENTRY = "submitlbentry"
         private const val REQUEST_PING = "ping"
 
-        private const val RCHEEVOS_VERSION = "12.2.1"
+        private const val RCHEEVOS_VERSION = "12.3.0"
     }
 
     suspend fun login(username: String, password: String): Result<Unit> {
@@ -209,9 +209,6 @@ class RAApi(
             parameters,
         ).map {
             RASubmitLeaderboardEntryResponse(
-                gameId = RAGameId(it.response.leaderboardData.gameId),
-                title = it.response.leaderboardData.title,
-                formattedScore = it.response.scoreFormatted,
                 rank = it.response.rankInfo.rank,
                 numEntries = it.response.rankInfo.numEntries,
             )

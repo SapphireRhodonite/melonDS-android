@@ -89,7 +89,11 @@ class SmartSyncEngine(
             .flatMap { it.achievements.asSequence() }
             .associate { it.id to it.memoryAddress }
 
-        val startSessionResult = raApi.startSession(RAGameId(cache.gameId))
+        val startSessionResult = raApi.startSession(
+            gameId = RAGameId(cache.gameId),
+            gameHash = contentId,
+            forHardcoreMode = pending.any { it.unlockMode == OfflineUnlockMode.HARDCORE },
+        )
         if (startSessionResult.isFailure) {
             return@withContext Result.failure(startSessionResult.exceptionOrNull() ?: IllegalStateException("Failed to start RA session"))
         }

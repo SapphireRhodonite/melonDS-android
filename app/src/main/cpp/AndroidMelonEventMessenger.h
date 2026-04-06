@@ -19,7 +19,7 @@ public:
     void onLeaderboardAttemptStarted(long leaderboardId) override;
     void onLeaderboardAttemptUpdated(long leaderboardId, std::string formattedValue) override;
     void onLeaderboardAttemptCanceled(long leaderboardId) override;
-    void onLeaderboardAttemptCompleted(long leaderboardId, int value) override;
+    void onLeaderboardAttemptCompleted(long leaderboardId, int value, std::string formattedValue) override;
     void onAchievementGameCompleted(long subsetId) override;
     void onAchievementSubsetCompleted(long subsetId) override;
     void onRetroAchievementsServerError(std::string api, long relatedId, int result, std::string message) override;

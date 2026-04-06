@@ -39,14 +39,15 @@ enum class AchievementStateFilter(
     val bucket: AchievementBucketUiModel.Bucket?,
 ) {
     All(0, null),
-    ActiveChallenges(1, AchievementBucketUiModel.Bucket.ActiveChallenges),
-    RecentlyUnlocked(2, AchievementBucketUiModel.Bucket.RecentlyUnlocked),
-    Unsynced(3, AchievementBucketUiModel.Bucket.Unsynced),
-    AlmostThere(4, AchievementBucketUiModel.Bucket.AlmostThere),
-    Locked(5, AchievementBucketUiModel.Bucket.Locked),
-    Unsupported(6, AchievementBucketUiModel.Bucket.Unsupported),
-    Unofficial(7, AchievementBucketUiModel.Bucket.Unofficial),
-    Unlocked(8, AchievementBucketUiModel.Bucket.Unlocked),
+    PendingSubmissions(1, AchievementBucketUiModel.Bucket.PendingSubmissions),
+    ActiveChallenges(2, AchievementBucketUiModel.Bucket.ActiveChallenges),
+    RecentlyUnlocked(3, AchievementBucketUiModel.Bucket.RecentlyUnlocked),
+    Unsynced(4, AchievementBucketUiModel.Bucket.Unsynced),
+    AlmostThere(5, AchievementBucketUiModel.Bucket.AlmostThere),
+    Locked(6, AchievementBucketUiModel.Bucket.Locked),
+    Unsupported(7, AchievementBucketUiModel.Bucket.Unsupported),
+    Unofficial(8, AchievementBucketUiModel.Bucket.Unofficial),
+    Unlocked(9, AchievementBucketUiModel.Bucket.Unlocked),
     ;
 
     fun matches(bucketType: AchievementBucketUiModel.Bucket): Boolean {
@@ -56,6 +57,7 @@ enum class AchievementStateFilter(
     companion object {
         fun fromBucket(bucket: AchievementBucketUiModel.Bucket): AchievementStateFilter {
             return when (bucket) {
+                AchievementBucketUiModel.Bucket.PendingSubmissions -> PendingSubmissions
                 AchievementBucketUiModel.Bucket.ActiveChallenges -> ActiveChallenges
                 AchievementBucketUiModel.Bucket.RecentlyUnlocked -> RecentlyUnlocked
                 AchievementBucketUiModel.Bucket.Unsynced -> Unsynced
@@ -154,6 +156,7 @@ private fun getTypeFilterLabel(filter: AchievementTypeFilter): String {
 private fun getStateFilterLabel(filter: AchievementStateFilter): String {
     return when (filter) {
         AchievementStateFilter.All -> stringResource(id = R.string.retro_achievements_filter_all)
+        AchievementStateFilter.PendingSubmissions -> stringResource(id = R.string.retro_achievements_pending_unlocks)
         AchievementStateFilter.ActiveChallenges -> stringResource(id = R.string.retro_achievements_active_challenges)
         AchievementStateFilter.RecentlyUnlocked -> stringResource(id = R.string.retro_achievements_recently_unlokced)
         AchievementStateFilter.Unsynced -> stringResource(id = R.string.retro_achievements_unsynced)

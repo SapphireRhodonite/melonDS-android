@@ -106,8 +106,9 @@ import me.magnum.melonds.ui.emulator.rewind.RewindSaveStateAdapter
 import me.magnum.melonds.ui.emulator.rewind.model.RewindWindow
 import me.magnum.melonds.ui.emulator.rom.SaveStateAdapter
 import me.magnum.melonds.ui.emulator.ui.AchievementListDialog
-import me.magnum.melonds.ui.emulator.ui.DualScreenPresetsDialog
 import me.magnum.melonds.ui.emulator.ui.AchievementUpdatesUi
+import me.magnum.melonds.ui.emulator.ui.DualScreenPresetsDialog
+import me.magnum.melonds.ui.emulator.ui.PendingSubmissionsDialog
 import me.magnum.melonds.ui.layouteditor.model.LayoutTarget
 import me.magnum.melonds.ui.settings.SettingsActivity
 import me.magnum.melonds.ui.theme.MelonTheme
@@ -175,7 +176,6 @@ class EmulatorActivity : AppCompatActivity() {
     private var presentation: ExternalPresentation? = null
 
     private lateinit var handler: Handler
-    private lateinit var displayManager: DisplayManager
     private val displayListener = object : DisplayManager.DisplayListener {
 
         override fun onDisplayAdded(displayId: Int) {
@@ -296,6 +296,7 @@ class EmulatorActivity : AppCompatActivity() {
         closeRewindWindow()
     }
     private val showAchievementList = mutableStateOf(false)
+    private val showPendingSubmissionsDialog = mutableStateOf(false)
     private val showDualScreenPresets = mutableStateOf(false)
 
     private val activeOverlays = EmulatorOverlayTracker(
@@ -340,9 +341,6 @@ class EmulatorActivity : AppCompatActivity() {
         binding.surfaceMain.apply {
             setRenderer(mainScreenRenderer)
         }
-
-        displayManager = getSystemService<DisplayManager>()!!
-        displayManager.registerDisplayListener(displayListener, null)
 
         binding.textFps.visibility = View.INVISIBLE
         binding.viewLayoutControls.setLayoutComponentViewBuilderFactory(RuntimeLayoutComponentViewBuilderFactory())
@@ -397,6 +395,22 @@ class EmulatorActivity : AppCompatActivity() {
                             viewModel.resumeEmulator()
                             showAchievementList.value = false
                         }
+                    )
+                }
+
+                if (showPendingSubmissionsDialog.value) {
+                    PendingSubmissionsDialog(
+                        pendingSubmissionsSummaryFlow = viewModel.pendingSubmissionsSummary,
+                        onExit = {
+                            activeOverlays.removeActiveOverlay(EmulatorOverlay.PENDING_SUBMISSION_CONFIRM_EXIT)
+                            showPendingSubmissionsDialog.value = false
+                            viewModel.exitEmulator(force = true)
+                        },
+                        onCancel = {
+                            activeOverlays.removeActiveOverlay(EmulatorOverlay.PENDING_SUBMISSION_CONFIRM_EXIT)
+                            viewModel.resumeEmulator()
+                            showPendingSubmissionsDialog.value = false
+                        },
                     )
                 }
 
@@ -644,6 +658,10 @@ class EmulatorActivity : AppCompatActivity() {
                             activeOverlays.addActiveOverlay(EmulatorOverlay.ACHIEVEMENTS_DIALOG)
                             showAchievementList.value = true
                         }
+                        EmulatorUiEvent.ShowPendingSubmissionsDialog -> {
+                            activeOverlays.addActiveOverlay(EmulatorOverlay.PENDING_SUBMISSION_CONFIRM_EXIT)
+                            showPendingSubmissionsDialog.value = true
+                        }
                         EmulatorUiEvent.ShowDualScreenPresets -> {
                             activeOverlays.addActiveOverlay(EmulatorOverlay.PRESETS_DIALOG)
                             showDualScreenPresets.value = true
@@ -836,6 +854,7 @@ class EmulatorActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         updateDisplays()
+        getSystemService<DisplayManager>()?.registerDisplayListener(displayListener, null)
         getSystemService<InputManager>()?.registerInputDeviceListener(connectedControllerManager, null)
         connectedControllerManager.startTrackingControllers()
         frameRenderCoordinator.addSurface(binding.surfaceMain)
@@ -1417,6 +1436,7 @@ class EmulatorActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         cancelStartupPresentationRefreshes()
+        getSystemService<DisplayManager>()?.unregisterDisplayListener(displayListener)
         getSystemService<InputManager>()?.unregisterInputDeviceListener(connectedControllerManager)
         connectedControllerManager.stopTrackingControllers()
         frameRenderCoordinator.removeSurface(binding.surfaceMain)
@@ -1430,6 +1450,5 @@ class EmulatorActivity : AppCompatActivity() {
         hardcorePendingExitDialog?.dismiss()
         frameRenderCoordinator.stop()
         presentation?.dismiss()
-        displayManager.unregisterDisplayListener(displayListener)
     }
 }
