@@ -85,6 +85,13 @@
             app:iconSpaceReserved="false">
 
         <SwitchPreference
+                android:key="video_renderer_debug_tools_enabled"
+                android:title="@string/video_renderer_debug_tools_enabled"
+                android:summary="@string/video_renderer_debug_tools_enabled_summary"
+                app:iconSpaceReserved="false"
+                android:defaultValue="false" />
+
+        <SwitchPreference
                 android:key="video_conservative_coverage_enabled"
                 android:title="@string/conservative_coverage_enabled"
                 android:summary="@string/conservative_coverage_enabled_summary"

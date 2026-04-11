@@ -31,10 +31,13 @@ interface SettingsRepository {
     fun showBootScreen(): Boolean
     fun isJitEnabled(): Boolean
 
+    fun getCurrentVideoRenderer(): VideoRenderer
+    fun setCurrentVideoRenderer(renderer: VideoRenderer)
     fun getVideoRenderer(): Flow<VideoRenderer>
     fun getVideoInternalResolutionScaling(): Flow<Int>
     fun getVideoFiltering(): Flow<VideoFiltering>
     fun isThreadedRenderingEnabled(): Flow<Boolean>
+    fun isRendererDebugToolsEnabled(): Flow<Boolean>
     fun getFpsCounterPosition(): FpsCounterPosition
 
     fun isExternalDisplayKeepAspectRationEnabled(): Boolean

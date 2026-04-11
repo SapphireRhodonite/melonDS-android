@@ -1,11 +1,17 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <GLES3/gl3.h>
+#include <android/bitmap.h>
+#include <android/native_window_jni.h>
 #include <jni.h>
 #include <string>
 #include <sstream>
 #include <vector>
 #include <mutex>
+#include <algorithm>
 #include <stdlib.h>
+#include <cstdint>
+#include <chrono>
 #include <pthread.h>
 #include <unistd.h>
 #include <cstdlib>
@@ -107,6 +113,337 @@ jmethodID getOrInitFrameRenderMethodId(JNIEnv* env, jobject callbackObject)
 
     frameRenderMethodId = env->GetMethodID(frameRenderCallbackClass, "renderFrame", "(ZIII)V");
     return frameRenderMethodId;
+}
+
+bool getEnumOrdinal(JNIEnv* env, jobject enumObject, jint* ordinalOut)
+{
+    if (enumObject == nullptr || ordinalOut == nullptr)
+        return false;
+
+    jclass enumClass = env->FindClass("java/lang/Enum");
+    if (enumClass == nullptr)
+        return false;
+
+    jmethodID ordinalMethod = env->GetMethodID(enumClass, "ordinal", "()I");
+    env->DeleteLocalRef(enumClass);
+    if (ordinalMethod == nullptr)
+        return false;
+
+    *ordinalOut = env->CallIntMethod(enumObject, ordinalMethod);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool setAccessibleOnField(JNIEnv* env, jobject fieldObject)
+{
+    if (fieldObject == nullptr)
+        return false;
+
+    jclass accessibleObjectClass = env->FindClass("java/lang/reflect/AccessibleObject");
+    if (accessibleObjectClass == nullptr)
+        return false;
+
+    jmethodID setAccessibleMethod = env->GetMethodID(accessibleObjectClass, "setAccessible", "(Z)V");
+    env->DeleteLocalRef(accessibleObjectClass);
+    if (setAccessibleMethod == nullptr)
+        return false;
+
+    env->CallVoidMethod(fieldObject, setAccessibleMethod, JNI_TRUE);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+jobject getDeclaredFieldObject(JNIEnv* env, jobject targetObject, const char* fieldName)
+{
+    if (targetObject == nullptr || fieldName == nullptr)
+        return nullptr;
+
+    jclass classClass = env->FindClass("java/lang/Class");
+    if (classClass == nullptr)
+        return nullptr;
+
+    jmethodID getDeclaredFieldMethod = env->GetMethodID(classClass, "getDeclaredField", "(Ljava/lang/String;)Ljava/lang/reflect/Field;");
+    env->DeleteLocalRef(classClass);
+    if (getDeclaredFieldMethod == nullptr)
+        return nullptr;
+
+    jclass targetClass = env->GetObjectClass(targetObject);
+    if (targetClass == nullptr)
+        return nullptr;
+
+    jstring fieldNameString = env->NewStringUTF(fieldName);
+    jobject fieldObject = env->CallObjectMethod(targetClass, getDeclaredFieldMethod, fieldNameString);
+    env->DeleteLocalRef(fieldNameString);
+    env->DeleteLocalRef(targetClass);
+    if (fieldObject == nullptr || env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return nullptr;
+    }
+
+    if (!setAccessibleOnField(env, fieldObject))
+    {
+        env->DeleteLocalRef(fieldObject);
+        return nullptr;
+    }
+
+    return fieldObject;
+}
+
+jobject getObjectFieldByName(JNIEnv* env, jobject targetObject, const char* fieldName)
+{
+    jobject fieldObject = getDeclaredFieldObject(env, targetObject, fieldName);
+    if (fieldObject == nullptr)
+        return nullptr;
+
+    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
+    if (fieldClass == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return nullptr;
+    }
+
+    jmethodID getMethod = env->GetMethodID(fieldClass, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    env->DeleteLocalRef(fieldClass);
+    if (getMethod == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return nullptr;
+    }
+
+    jobject valueObject = env->CallObjectMethod(fieldObject, getMethod, targetObject);
+    env->DeleteLocalRef(fieldObject);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return nullptr;
+    }
+
+    return valueObject;
+}
+
+bool getFloatFieldByName(JNIEnv* env, jobject targetObject, const char* fieldName, float* valueOut)
+{
+    if (valueOut == nullptr)
+        return false;
+
+    jobject fieldObject = getDeclaredFieldObject(env, targetObject, fieldName);
+    if (fieldObject == nullptr)
+        return false;
+
+    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
+    if (fieldClass == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    jmethodID getFloatMethod = env->GetMethodID(fieldClass, "getFloat", "(Ljava/lang/Object;)F");
+    env->DeleteLocalRef(fieldClass);
+    if (getFloatMethod == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    *valueOut = env->CallFloatMethod(fieldObject, getFloatMethod, targetObject);
+    env->DeleteLocalRef(fieldObject);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool getBooleanFieldByName(JNIEnv* env, jobject targetObject, const char* fieldName, bool* valueOut)
+{
+    if (valueOut == nullptr)
+        return false;
+
+    jobject fieldObject = getDeclaredFieldObject(env, targetObject, fieldName);
+    if (fieldObject == nullptr)
+        return false;
+
+    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
+    if (fieldClass == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    jmethodID getBooleanMethod = env->GetMethodID(fieldClass, "getBoolean", "(Ljava/lang/Object;)Z");
+    env->DeleteLocalRef(fieldClass);
+    if (getBooleanMethod == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    *valueOut = env->CallBooleanMethod(fieldObject, getBooleanMethod, targetObject);
+    env->DeleteLocalRef(fieldObject);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool getIntFieldByName(JNIEnv* env, jobject targetObject, const char* fieldName, int* valueOut)
+{
+    if (valueOut == nullptr)
+        return false;
+
+    jobject fieldObject = getDeclaredFieldObject(env, targetObject, fieldName);
+    if (fieldObject == nullptr)
+        return false;
+
+    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
+    if (fieldClass == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    jmethodID getIntMethod = env->GetMethodID(fieldClass, "getInt", "(Ljava/lang/Object;)I");
+    env->DeleteLocalRef(fieldClass);
+    if (getIntMethod == nullptr)
+    {
+        env->DeleteLocalRef(fieldObject);
+        return false;
+    }
+
+    *valueOut = env->CallIntMethod(fieldObject, getIntMethod, targetObject);
+    env->DeleteLocalRef(fieldObject);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool mapRect(JNIEnv* env, jobject rectObject, MelonDSAndroid::VulkanPresenterRect* rectOut)
+{
+    if (rectOut == nullptr)
+        return false;
+
+    rectOut->enabled = false;
+    rectOut->x = 0;
+    rectOut->y = 0;
+    rectOut->width = 0;
+    rectOut->height = 0;
+
+    if (rectObject == nullptr)
+        return true;
+
+    rectOut->enabled = true;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    if (!getIntFieldByName(env, rectObject, "x", &x)
+        || !getIntFieldByName(env, rectObject, "y", &y)
+        || !getIntFieldByName(env, rectObject, "width", &width)
+        || !getIntFieldByName(env, rectObject, "height", &height))
+    {
+        return false;
+    }
+
+    rectOut->x = x;
+    rectOut->y = y;
+    rectOut->width = width;
+    rectOut->height = height;
+    return true;
+}
+
+bool mapVulkanPresentationConfig(JNIEnv* env, jobject configObject, MelonDSAndroid::VulkanSurfaceConfig* configOut)
+{
+    if (configObject == nullptr || configOut == nullptr)
+        return false;
+
+    jobject topRectObject = getObjectFieldByName(env, configObject, "topScreenRect");
+    jobject bottomRectObject = getObjectFieldByName(env, configObject, "bottomScreenRect");
+    jobject backgroundModeObject = getObjectFieldByName(env, configObject, "backgroundMode");
+    jobject filteringObject = getObjectFieldByName(env, configObject, "videoFiltering");
+
+    float topAlpha = 1.0f;
+    float bottomAlpha = 1.0f;
+    bool topOnTop = false;
+    bool bottomOnTop = false;
+    bool result = getFloatFieldByName(env, configObject, "topAlpha", &topAlpha)
+        && getFloatFieldByName(env, configObject, "bottomAlpha", &bottomAlpha)
+        && getBooleanFieldByName(env, configObject, "topOnTop", &topOnTop)
+        && getBooleanFieldByName(env, configObject, "bottomOnTop", &bottomOnTop);
+
+    configOut->topAlpha = topAlpha;
+    configOut->bottomAlpha = bottomAlpha;
+    configOut->topOnTop = topOnTop;
+    configOut->bottomOnTop = bottomOnTop;
+
+    result = result
+        && backgroundModeObject != nullptr
+        && filteringObject != nullptr
+        && mapRect(env, topRectObject, &configOut->topScreen)
+        && mapRect(env, bottomRectObject, &configOut->bottomScreen);
+
+    jint backgroundModeOrdinal = 0;
+    jint filteringOrdinal = 0;
+    result = result
+        && getEnumOrdinal(env, backgroundModeObject, &backgroundModeOrdinal)
+        && getEnumOrdinal(env, filteringObject, &filteringOrdinal);
+
+    switch (backgroundModeOrdinal)
+    {
+        case 1:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::FitCenter;
+            break;
+        case 2:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::FitTop;
+            break;
+        case 3:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::FitLeft;
+            break;
+        case 4:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::FitBottom;
+            break;
+        case 5:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::FitRight;
+            break;
+        case 0:
+        default:
+            configOut->backgroundMode = MelonDSAndroid::VulkanPresenterBackgroundMode::Stretch;
+            break;
+    }
+
+    configOut->filtering = filteringOrdinal == 1
+        ? MelonDSAndroid::VulkanPresenterFilter::Linear
+        : MelonDSAndroid::VulkanPresenterFilter::Nearest;
+
+    if (topRectObject != nullptr)
+        env->DeleteLocalRef(topRectObject);
+    if (bottomRectObject != nullptr)
+        env->DeleteLocalRef(bottomRectObject);
+    if (backgroundModeObject != nullptr)
+        env->DeleteLocalRef(backgroundModeObject);
+    if (filteringObject != nullptr)
+        env->DeleteLocalRef(filteringObject);
+
+    return result;
 }
 
 }
@@ -427,6 +764,12 @@ Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz)
     started = true;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_me_magnum_melonds_MelonEmulator_precompileVulkanPipelines(JNIEnv* env, jobject thiz)
+{
+    return MelonDSAndroid::precompileVulkanPipelines() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_me_magnum_melonds_MelonEmulator_presentFrame(JNIEnv* env, jobject thiz, jlong deadlineNs, jobject renderFrameCallback)
 {
@@ -456,12 +799,26 @@ Java_me_magnum_melonds_MelonEmulator_presentFrame(JNIEnv* env, jobject thiz, jlo
 
     if (presentationFrame != nullptr)
     {
-        eglWaitSyncKHR(currentDisplay, presentationFrame->renderFence, 0);
+        if (presentationFrame->backend != FrameBackend::OpenGlTexture)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "MelonEmulator.presentFrame: mixed Vulkan->OpenGL presentation is disabled in production (backend=%u renderer=%u)",
+                static_cast<unsigned>(presentationFrame->backend),
+                static_cast<unsigned>(MelonDSAndroid::getCurrentRenderer())
+            );
+            env->CallVoidMethod(renderFrameCallback, renderMethod, false, 0, 0, 0);
+            return;
+        }
+
+        if (presentationFrame->renderFence)
+            eglWaitSyncKHR(currentDisplay, presentationFrame->renderFence, 0);
+
         env->CallVoidMethod(
             renderFrameCallback,
             renderMethod,
             true,
-            (jint) presentationFrame->frameTexture,
+            static_cast<jint>(presentationFrame->frameTexture),
             (jint) presentationFrame->width,
             (jint) presentationFrame->height
         );
@@ -474,10 +831,215 @@ Java_me_magnum_melonds_MelonEmulator_presentFrame(JNIEnv* env, jobject thiz, jlo
     }
 }
 
+JNIEXPORT jint JNICALL
+Java_me_magnum_melonds_MelonEmulator_attachVulkanSurface(JNIEnv* env, jobject thiz, jobject surface, jint width, jint height)
+{
+    if (surface == nullptr)
+        return 0;
+
+    ANativeWindow* nativeWindow = ANativeWindow_fromSurface(env, surface);
+    if (nativeWindow == nullptr)
+        return 0;
+
+    return static_cast<jint>(MelonDSAndroid::attachVulkanSurface(
+        nativeWindow,
+        static_cast<u32>(std::max(width, 0)),
+        static_cast<u32>(std::max(height, 0))
+    ));
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonEmulator_resizeVulkanSurface(JNIEnv* env, jobject thiz, jint surfaceId, jint width, jint height)
+{
+    if (surfaceId <= 0)
+        return;
+
+    MelonDSAndroid::resizeVulkanSurface(
+        surfaceId,
+        static_cast<u32>(std::max(width, 0)),
+        static_cast<u32>(std::max(height, 0))
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonEmulator_configureVulkanSurface(
+    JNIEnv* env,
+    jobject thiz,
+    jint surfaceId,
+    jobject presentationConfig,
+    jobject backgroundBitmap)
+{
+    if (surfaceId <= 0 || presentationConfig == nullptr)
+        return;
+
+    MelonDSAndroid::VulkanSurfaceConfig nativeConfig{};
+    if (!mapVulkanPresentationConfig(env, presentationConfig, &nativeConfig))
+        return;
+
+    MelonDSAndroid::VulkanBackgroundImage nativeBackground{};
+    AndroidBitmapInfo bitmapInfo{};
+    void* bitmapPixels = nullptr;
+    bool hasLockedBitmap = false;
+
+    if (backgroundBitmap != nullptr)
+    {
+        if (AndroidBitmap_getInfo(env, backgroundBitmap, &bitmapInfo) == ANDROID_BITMAP_RESULT_SUCCESS
+            && bitmapInfo.format == ANDROID_BITMAP_FORMAT_RGBA_8888
+            && AndroidBitmap_lockPixels(env, backgroundBitmap, &bitmapPixels) == ANDROID_BITMAP_RESULT_SUCCESS)
+        {
+            hasLockedBitmap = true;
+            nativeBackground.pixels = static_cast<const u32*>(bitmapPixels);
+            nativeBackground.width = bitmapInfo.width;
+            nativeBackground.height = bitmapInfo.height;
+        }
+    }
+
+    MelonDSAndroid::configureVulkanSurface(surfaceId, nativeConfig, nativeBackground);
+
+    if (hasLockedBitmap)
+        AndroidBitmap_unlockPixels(env, backgroundBitmap);
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonEmulator_detachVulkanSurface(JNIEnv* env, jobject thiz, jint surfaceId)
+{
+    if (surfaceId <= 0)
+        return;
+
+    MelonDSAndroid::detachVulkanSurface(surfaceId);
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonEmulator_presentVulkanFrame(JNIEnv* env, jobject thiz, jlong deadlineNs, jlong budgetDeadlineNs)
+{
+    const auto toDeadlineTime = [](jlong value) -> std::optional<std::chrono::time_point<std::chrono::steady_clock>> {
+        if (value <= 0)
+            return std::nullopt;
+
+        std::chrono::nanoseconds deadline(value);
+        return std::make_optional(std::chrono::time_point<std::chrono::steady_clock>(deadline));
+    };
+
+    const auto deadlineTime = toDeadlineTime(deadlineNs);
+    const auto budgetDeadlineTime = toDeadlineTime(budgetDeadlineNs);
+
+    MelonDSAndroid::presentVulkanFrame(deadlineTime, budgetDeadlineTime);
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentFrame(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+
+    const std::vector<u32> pixels = MelonDSAndroid::captureCurrentFrameForDebug();
+    if (pixels.empty())
+        return nullptr;
+
+    jintArray output = env->NewIntArray(static_cast<jsize>(pixels.size()));
+    if (output == nullptr)
+        return nullptr;
+
+    env->SetIntArrayRegion(
+        output,
+        0,
+        static_cast<jsize>(pixels.size()),
+        reinterpret_cast<const jint*>(pixels.data())
+    );
+    return output;
+}
+
+static jintArray MakeJavaIntArray(JNIEnv* env, const std::vector<u32>& values)
+{
+    if (values.empty())
+        return nullptr;
+
+    jintArray output = env->NewIntArray(static_cast<jsize>(values.size()));
+    if (output == nullptr)
+        return nullptr;
+
+    env->SetIntArrayRegion(
+        output,
+        0,
+        static_cast<jsize>(values.size()),
+        reinterpret_cast<const jint*>(values.data())
+    );
+    return output;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentPackedTopPrimary(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentPackedTopPrimaryForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentPackedBottomPrimary(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentPackedBottomPrimaryForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dDimensions(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dDimensionsForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dFrame(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dFrameForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dCaptureFrame(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dCaptureFrameForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dDepth(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dDepthForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dAttributes(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dAttrForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dCoverage(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrent3dCoverageForDebug());
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_dumpCurrentRendererSnapshot(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    MelonDSAndroid::dumpCurrentRendererDebugSnapshot();
+}
+
 JNIEXPORT jfloat JNICALL
 Java_me_magnum_melonds_MelonEmulator_getFPS(JNIEnv* env, jobject thiz)
 {
     return fps;
+}
+
+JNIEXPORT jint JNICALL
+Java_me_magnum_melonds_MelonEmulator_getCurrentRenderer(JNIEnv* env, jobject thiz)
+{
+    return static_cast<jint>(MelonDSAndroid::getCurrentRenderer());
 }
 
 JNIEXPORT void JNICALL
@@ -695,13 +1257,17 @@ Java_me_magnum_melonds_MelonEmulator_onKeyRelease(JNIEnv* env, jobject thiz, jin
 JNIEXPORT void JNICALL
 Java_me_magnum_melonds_MelonEmulator_setFastForwardEnabled(JNIEnv* env, jobject thiz, jboolean enabled)
 {
+    const bool wasFastForwardEnabled = isFastForwardEnabled;
     isFastForwardEnabled = enabled;
+    MelonDSAndroid::setFastForwardActive(enabled);
     if (enabled) {
         limitFps = fastForwardSpeedMultiplier > 0;
         targetFps = 60 * fastForwardSpeedMultiplier;
     } else {
         limitFps = true;
         targetFps = 60;
+        if (wasFastForwardEnabled)
+            MelonDSAndroid::requestVulkanPresentationResync();
     }
 }
 

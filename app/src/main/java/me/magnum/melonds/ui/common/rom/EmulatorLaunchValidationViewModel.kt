@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import me.magnum.melonds.domain.model.ConsoleType
+import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.services.EmulatorLaunchPreconditionChecker
@@ -44,8 +45,13 @@ class EmulatorLaunchValidationViewModel @Inject constructor(
     fun validateFirmwareForLaunch(consoleType: ConsoleType) {
         currentLaunchValidationState = LaunchValidationState.ValidatingFirmware(consoleType)
 
-        val preconditionsCheckResult = emulatorLaunchPreconditionChecker.checkFirmwareLaunchPreconditions(consoleType)
-        _romValidationResult.tryEmit(LaunchValidationResult.Firmware(preconditionsCheckResult))
+        viewModelScope.launch {
+            val preconditionsCheckResult = emulatorLaunchPreconditionChecker.checkFirmwareLaunchPreconditions(consoleType)
+            _romValidationResult.tryEmit(LaunchValidationResult.Firmware(preconditionsCheckResult))
+            if (preconditionsCheckResult is FirmwareLaunchPreconditionCheckResult.Success) {
+                currentLaunchValidationState = null
+            }
+        }
     }
 
     fun onReturnFromFirmwareSettings() {

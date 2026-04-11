@@ -60,6 +60,7 @@ import me.magnum.melonds.domain.model.DualScreenPreset
 import me.magnum.melonds.domain.model.FpsCounterPosition
 import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.SaveStateSlot
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.layout.ScreenFold
 import me.magnum.melonds.domain.model.rom.Rom
@@ -90,11 +91,16 @@ import me.magnum.melonds.ui.emulator.model.PauseMenu
 import me.magnum.melonds.ui.emulator.model.RAEventUi
 import me.magnum.melonds.ui.emulator.model.RumbleEvent
 import me.magnum.melonds.ui.emulator.model.RuntimeInputLayoutConfiguration
+import me.magnum.melonds.ui.emulator.model.RuntimeRendererConfiguration
 import me.magnum.melonds.ui.emulator.model.ToastEvent
+import me.magnum.melonds.ui.emulator.model.VulkanCompileProgress
+import me.magnum.melonds.ui.emulator.model.VulkanPresentationConfig
 import me.magnum.melonds.ui.emulator.render.ChoreographerFrameRenderer
 import me.magnum.melonds.ui.emulator.render.ChoreographerFrameRendererFactory
 import me.magnum.melonds.ui.emulator.render.ExternalPresentation
 import me.magnum.melonds.ui.emulator.render.FrameRenderCoordinator
+import me.magnum.melonds.ui.emulator.render.OpenGlFrameRenderCoordinator
+import me.magnum.melonds.ui.emulator.render.VulkanFrameRenderCoordinator
 import me.magnum.melonds.ui.emulator.rewind.EdgeSpacingDecorator
 import me.magnum.melonds.ui.emulator.rewind.RewindSaveStateAdapter
 import me.magnum.melonds.ui.emulator.rewind.model.RewindWindow
@@ -107,6 +113,7 @@ import me.magnum.melonds.ui.settings.SettingsActivity
 import me.magnum.melonds.ui.theme.MelonTheme
 import java.text.SimpleDateFormat
 import javax.inject.Inject
+import kotlin.math.max
 
 @AndroidEntryPoint
 class EmulatorActivity : AppCompatActivity() {
@@ -116,6 +123,8 @@ class EmulatorActivity : AppCompatActivity() {
         const val KEY_URI = "uri"
         const val KEY_BOOT_FIRMWARE_CONSOLE = "boot_firmware_console"
         const val KEY_BOOT_FIRMWARE_ONLY = "boot_firmware_only"
+        private const val STARTUP_PRESENTATION_REFRESH_ATTEMPTS = 24
+        private const val STARTUP_PRESENTATION_REFRESH_INTERVAL_MS = 100L
 
         fun getRomEmulatorActivityIntent(context: Context, rom: Rom): Intent {
             return Intent(context, EmulatorActivity::class.java).apply {
@@ -193,6 +202,11 @@ class EmulatorActivity : AppCompatActivity() {
     private lateinit var mainScreenRenderer: DSRenderer
     private lateinit var melonTouchHandler: MelonTouchHandler
     private lateinit var nativeInputListener: INativeInputListener
+    private var currentRuntimeRendererConfiguration: RuntimeRendererConfiguration? = null
+    private var currentMainScreenBackground = me.magnum.melonds.domain.model.RuntimeBackground.None
+    private var currentPresentationBackend = PresentationBackend.OPEN_GL
+    private var startupPresentationRefreshRunnable: Runnable? = null
+    private var startupPresentationRefreshAttempts = 0
     private val frontendInputHandler = object : FrontendInputHandler() {
         var fastForwardEnabled = false
             private set
@@ -272,6 +286,11 @@ class EmulatorActivity : AppCompatActivity() {
     private var offlineSyncProgressDialog: AlertDialog? = null
     private var hardcorePendingExitDialog: AlertDialog? = null
 
+    private enum class PresentationBackend {
+        OPEN_GL,
+        VULKAN,
+    }
+
     private val rewindSaveStateAdapter = RewindSaveStateAdapter {
         viewModel.rewindToState(it)
         closeRewindWindow()
@@ -313,7 +332,8 @@ class EmulatorActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(backPressedCallback)
 
         emulatorRumbleManager = EmulatorRumbleManager(this, lifecycleScope, connectedControllerManager)
-        frameRenderCoordinator = FrameRenderCoordinator()
+        currentPresentationBackend = viewModel.getConfiguredVideoRenderer().toPresentationBackend()
+        frameRenderCoordinator = createFrameRenderCoordinator(currentPresentationBackend)
         choreographerFrameRenderer = ChoreographerFrameRendererFactory.createFrameRenderer(frameRenderCoordinator)
         melonTouchHandler = MelonTouchHandler()
         mainScreenRenderer = DSRenderer(this)
@@ -477,7 +497,9 @@ class EmulatorActivity : AppCompatActivity() {
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.mainScreenBackground.collectLatest {
+                    currentMainScreenBackground = it
                     mainScreenRenderer.setBackground(it)
+                    updateRendererScreenAreas()
                 }
             }
         }
@@ -491,8 +513,12 @@ class EmulatorActivity : AppCompatActivity() {
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.runtimeRendererConfiguration.collectLatest {
+                    currentRuntimeRendererConfiguration = it
+                    ensurePresentationBackend(it?.renderer ?: viewModel.getConfiguredVideoRenderer())
                     mainScreenRenderer.updateRendererConfiguration(it)
                     presentation?.updateRendererConfiguration(it)
+                    updateRendererScreenAreas()
+                    scheduleStartupPresentationRefreshes()
                 }
             }
         }
@@ -562,6 +588,20 @@ class EmulatorActivity : AppCompatActivity() {
                         }
                         is ToastEvent.OfflineAchievementsNotSyncedSummary -> {
                             getString(R.string.offline_ra_sync_skipped_summary_toast, it.skippedCount) to Toast.LENGTH_LONG
+                        }
+                        is ToastEvent.RendererInitFailed -> {
+                            val rendererLabel = when (it.renderer) {
+                                VideoRenderer.SOFTWARE -> "Software"
+                                VideoRenderer.OPENGL -> "OpenGL"
+                                VideoRenderer.VULKAN -> "Vulkan"
+                            }
+                            getString(R.string.renderer_init_failed_message, rendererLabel) to Toast.LENGTH_LONG
+                        }
+                        is ToastEvent.RendererDebugCaptureLogged -> {
+                            getString(R.string.renderer_debug_capture_logged, it.captureId) to Toast.LENGTH_LONG
+                        }
+                        ToastEvent.RendererDebugCaptureFailed -> {
+                            getString(R.string.renderer_debug_capture_failed) to Toast.LENGTH_LONG
                         }
                     }
 
@@ -643,37 +683,53 @@ class EmulatorActivity : AppCompatActivity() {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textLoading.isGone = true
+                            binding.progressLoading.isGone = true
+                            binding.textLoadingDetail.isGone = true
                         }
-                        EmulatorState.LoadingFirmware,
-                        EmulatorState.LoadingRom -> {
+                        is EmulatorState.LoadingFirmware,
+                        is EmulatorState.LoadingRom -> {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textLoading.isVisible = true
+                            val compileProgress = when (it) {
+                                is EmulatorState.LoadingRom -> it.vulkanCompileProgress
+                                is EmulatorState.LoadingFirmware -> it.vulkanCompileProgress
+                            }
+                            renderLoadingState(compileProgress)
                         }
                         is EmulatorState.RunningRom,
                         is EmulatorState.RunningFirmware -> {
                             setupSustainedPerformanceMode()
                             setupFpsCounter()
                             binding.textLoading.isGone = true
+                            binding.progressLoading.isGone = true
+                            binding.textLoadingDetail.isGone = true
                             binding.viewLayoutControls.isVisible = true
                             backPressedCallback.isEnabled = true
+                            scheduleStartupPresentationRefreshes()
                         }
                         is EmulatorState.RomLoadError -> {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textLoading.isGone = true
+                            binding.progressLoading.isGone = true
+                            binding.textLoadingDetail.isGone = true
                             showRomLoadErrorDialog()
                         }
                         is EmulatorState.FirmwareLoadError -> {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textLoading.isGone = true
+                            binding.progressLoading.isGone = true
+                            binding.textLoadingDetail.isGone = true
                             showFirmwareLoadErrorDialog(it)
                         }
                         is EmulatorState.RomNotFoundError -> {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textLoading.isGone = true
+                            binding.progressLoading.isGone = true
+                            binding.textLoadingDetail.isGone = true
                             showRomNotFoundDialog(it.romPath)
                         }
                     }
@@ -707,6 +763,33 @@ class EmulatorActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun renderLoadingState(progress: VulkanCompileProgress?) {
+        if (progress == null || progress.total <= 0) {
+            binding.textLoading.setText(R.string.info_loading)
+            binding.progressLoading.isVisible = true
+            binding.progressLoading.isIndeterminate = true
+            binding.textLoadingDetail.isGone = true
+            return
+        }
+
+        binding.textLoading.setText(R.string.info_vulkan_compiling_title)
+        binding.progressLoading.isVisible = true
+        binding.progressLoading.isIndeterminate = true
+        binding.textLoadingDetail.isVisible = true
+        binding.textLoadingDetail.text = getVulkanCompileStageLabel(progress.stageId)
+    }
+
+    private fun getVulkanCompileStageLabel(stageId: Int): String {
+        val labelRes = when (stageId) {
+            1 -> R.string.info_vulkan_compiling_stage_init
+            2 -> R.string.info_vulkan_compiling_stage_pipelines
+            3 -> R.string.info_vulkan_compiling_stage_output
+            4 -> R.string.info_vulkan_compiling_stage_warmup
+            else -> R.string.info_vulkan_compiling_stage_init
+        }
+        return getString(labelRes)
     }
 
     private fun showOfflineAchievementsSyncChoiceDialog(pendingUnlockCount: Int) {
@@ -806,6 +889,7 @@ class EmulatorActivity : AppCompatActivity() {
 
                 show()
             }
+            scheduleStartupPresentationRefreshes()
         }
     }
 
@@ -925,6 +1009,7 @@ class EmulatorActivity : AppCompatActivity() {
                 applyDualScreenPresetSwapState()
                 updateRendererScreenAreas()
                 presentation?.updateRendererScreenAreas()
+                scheduleStartupPresentationRefreshes()
             }
         } else {
             binding.viewLayoutControls.destroyLayout()
@@ -973,6 +1058,7 @@ class EmulatorActivity : AppCompatActivity() {
         presentation?.swapScreens()
 
         updateRendererScreenAreas()
+        scheduleStartupPresentationRefreshes()
     }
 
     private fun updateRendererScreenAreas() {
@@ -991,6 +1077,156 @@ class EmulatorActivity : AppCompatActivity() {
             topView?.onTop ?: false,
             bottomView?.onTop ?: false,
         )
+        frameRenderCoordinator.updateSurfacePresentation(
+            binding.surfaceMain,
+            buildVulkanPresentationConfig(
+                topScreenRect = topView?.getRect(),
+                bottomScreenRect = bottomView?.getRect(),
+                topAlpha = topView?.baseAlpha ?: 1f,
+                bottomAlpha = bottomView?.baseAlpha ?: 1f,
+                topOnTop = topView?.onTop ?: false,
+                bottomOnTop = bottomView?.onTop ?: false,
+            ),
+            currentMainScreenBackground,
+        )
+    }
+
+    private fun ensurePresentationBackend(renderer: VideoRenderer) {
+        val targetBackend = renderer.toPresentationBackend()
+        if (targetBackend == currentPresentationBackend) {
+            return
+        }
+
+        val wasRendering = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        choreographerFrameRenderer.stopRendering()
+
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            frameRenderCoordinator.removeSurface(binding.surfaceMain)
+        }
+        presentation?.dismiss()
+        presentation = null
+        frameRenderCoordinator.stop()
+
+        currentPresentationBackend = targetBackend
+        frameRenderCoordinator = createFrameRenderCoordinator(targetBackend)
+        choreographerFrameRenderer = ChoreographerFrameRendererFactory.createFrameRenderer(frameRenderCoordinator)
+
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            frameRenderCoordinator.addSurface(binding.surfaceMain)
+            updateDisplays()
+        }
+
+        updateRendererScreenAreas()
+        scheduleStartupPresentationRefreshes()
+
+        if (wasRendering) {
+            choreographerFrameRenderer.startRendering()
+        }
+    }
+
+    private fun scheduleStartupPresentationRefreshes() {
+        cancelStartupPresentationRefreshes()
+        if (currentPresentationBackend != PresentationBackend.VULKAN) {
+            return
+        }
+
+        startupPresentationRefreshAttempts = 0
+        val refreshRunnable = object : Runnable {
+            override fun run() {
+                if (isDestroyed || currentPresentationBackend != PresentationBackend.VULKAN) {
+                    startupPresentationRefreshRunnable = null
+                    return
+                }
+
+                updateRendererScreenAreas()
+                presentation?.updateRendererScreenAreas()
+
+                startupPresentationRefreshAttempts += 1
+                if (startupPresentationRefreshAttempts < STARTUP_PRESENTATION_REFRESH_ATTEMPTS) {
+                    handler.postDelayed(this, STARTUP_PRESENTATION_REFRESH_INTERVAL_MS)
+                } else {
+                    startupPresentationRefreshRunnable = null
+                }
+            }
+        }
+        startupPresentationRefreshRunnable = refreshRunnable
+        handler.post(refreshRunnable)
+    }
+
+    private fun cancelStartupPresentationRefreshes() {
+        startupPresentationRefreshRunnable?.let { handler.removeCallbacks(it) }
+        startupPresentationRefreshRunnable = null
+        startupPresentationRefreshAttempts = 0
+    }
+
+    private fun buildVulkanPresentationConfig(
+        topScreenRect: Rect?,
+        bottomScreenRect: Rect?,
+        topAlpha: Float,
+        bottomAlpha: Float,
+        topOnTop: Boolean,
+        bottomOnTop: Boolean,
+    ): VulkanPresentationConfig? {
+        val rendererConfiguration = currentRuntimeRendererConfiguration ?: return null
+        if (rendererConfiguration.renderer != VideoRenderer.VULKAN) {
+            return null
+        }
+
+        val (surfaceWidth, surfaceHeight) = binding.surfaceMain.getCurrentSurfaceSize()
+        val (resolvedTopScreenRect, resolvedBottomScreenRect) = resolveVulkanScreenRects(
+            topScreenRect = topScreenRect,
+            bottomScreenRect = bottomScreenRect,
+            surfaceWidth = if (surfaceWidth > 0) surfaceWidth else binding.surfaceMain.width,
+            surfaceHeight = if (surfaceHeight > 0) surfaceHeight else binding.surfaceMain.height,
+        )
+
+        return VulkanPresentationConfig(
+            topScreenRect = resolvedTopScreenRect,
+            bottomScreenRect = resolvedBottomScreenRect,
+            topAlpha = topAlpha,
+            bottomAlpha = bottomAlpha,
+            topOnTop = topOnTop,
+            bottomOnTop = bottomOnTop,
+            backgroundMode = currentMainScreenBackground.mode,
+            videoFiltering = rendererConfiguration.videoFiltering,
+        )
+    }
+
+    private fun resolveVulkanScreenRects(
+        topScreenRect: Rect?,
+        bottomScreenRect: Rect?,
+        surfaceWidth: Int,
+        surfaceHeight: Int,
+    ): Pair<Rect?, Rect?> {
+        val sanitizedTopRect = topScreenRect?.takeIf { it.width > 0 && it.height > 0 }
+        val sanitizedBottomRect = bottomScreenRect?.takeIf { it.width > 0 && it.height > 0 }
+
+        if (sanitizedTopRect != null || sanitizedBottomRect != null) {
+            return sanitizedTopRect to sanitizedBottomRect
+        }
+
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) {
+            return null to null
+        }
+
+        val topHeight = max(1, surfaceHeight / 2)
+        val bottomHeight = max(1, surfaceHeight - topHeight)
+        return Rect(0, 0, surfaceWidth, topHeight) to Rect(0, topHeight, surfaceWidth, bottomHeight)
+    }
+
+    private fun createFrameRenderCoordinator(backend: PresentationBackend): FrameRenderCoordinator {
+        return when (backend) {
+            PresentationBackend.OPEN_GL -> OpenGlFrameRenderCoordinator()
+            PresentationBackend.VULKAN -> VulkanFrameRenderCoordinator(this)
+        }
+    }
+
+    private fun VideoRenderer.toPresentationBackend(): PresentationBackend {
+        return if (this == VideoRenderer.VULKAN) {
+            PresentationBackend.VULKAN
+        } else {
+            PresentationBackend.OPEN_GL
+        }
     }
 
     private fun setupInputHandling(controllerConfiguration: ControllerConfiguration) {
@@ -1162,6 +1398,7 @@ class EmulatorActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        cancelStartupPresentationRefreshes()
         enableScreenTimeOut()
         choreographerFrameRenderer.stopRendering()
         viewModel.pauseEmulator(false)
@@ -1179,6 +1416,7 @@ class EmulatorActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        cancelStartupPresentationRefreshes()
         getSystemService<InputManager>()?.unregisterInputDeviceListener(connectedControllerManager)
         connectedControllerManager.stopTrackingControllers()
         frameRenderCoordinator.removeSurface(binding.surfaceMain)
@@ -1186,6 +1424,7 @@ class EmulatorActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelStartupPresentationRefreshes()
         offlineSyncChoiceDialog?.dismiss()
         offlineSyncProgressDialog?.dismiss()
         hardcorePendingExitDialog?.dismiss()

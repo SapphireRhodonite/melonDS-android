@@ -1,6 +1,7 @@
 package me.magnum.melonds.domain.model.emulator.validation
 
 import me.magnum.melonds.domain.model.ConfigurationDirResult
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.rom.Rom
 
 sealed class RomLaunchPreconditionCheckResult {
@@ -13,4 +14,6 @@ sealed class RomLaunchPreconditionCheckResult {
         }
     }
     data class BiosConfigurationIncorrect(val configurationDirectoryResult: ConfigurationDirResult) : RomLaunchPreconditionCheckResult()
+    data class RendererUnsupported(val renderer: VideoRenderer) : RomLaunchPreconditionCheckResult()
+    data class RendererInitFailed(val renderer: VideoRenderer) : RomLaunchPreconditionCheckResult()
 }

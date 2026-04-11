@@ -14,6 +14,12 @@ import me.magnum.melonds.ui.emulator.render.GlContext
 
 class EmulatorSurfaceView(context: Context, attrs: AttributeSet? = null) : SurfaceView(context, attrs), SurfaceHolder.Callback {
 
+    interface SurfaceLifecycleListener {
+        fun onSurfaceCreated(surfaceView: EmulatorSurfaceView, surface: Surface)
+        fun onSurfaceChanged(surfaceView: EmulatorSurfaceView, surface: Surface, width: Int, height: Int)
+        fun onSurfaceDestroyed(surfaceView: EmulatorSurfaceView)
+    }
+
     private val surfaceLock = Object()
     private var surfaceWidth = 0
     private var surfaceHeight = 0
@@ -21,6 +27,7 @@ class EmulatorSurfaceView(context: Context, attrs: AttributeSet? = null) : Surfa
     private var surface: Surface? = null
     private var windowSurface: EGLSurface? = null
     private var renderer: EmulatorRenderer? = null
+    private var surfaceLifecycleListener: SurfaceLifecycleListener? = null
 
     private enum class SurfaceState {
         UNINITIALIZED,
@@ -40,26 +47,61 @@ class EmulatorSurfaceView(context: Context, attrs: AttributeSet? = null) : Surfa
         renderer?.updateRendererConfiguration(newRendererConfiguration)
     }
 
+    fun setSurfaceLifecycleListener(listener: SurfaceLifecycleListener?) {
+        synchronized(surfaceLock) {
+            surfaceLifecycleListener = listener
+        }
+    }
+
+    fun getCurrentSurface(): Surface? {
+        synchronized(surfaceLock) {
+            return surface
+        }
+    }
+
+    fun getCurrentSurfaceSize(): Pair<Int, Int> {
+        synchronized(surfaceLock) {
+            return surfaceWidth to surfaceHeight
+        }
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
+        val listener: SurfaceLifecycleListener?
+        val currentSurface: Surface?
         synchronized(surfaceLock) {
             surface = holder.surface
+            currentSurface = surface
+            listener = surfaceLifecycleListener
+        }
+        currentSurface?.let {
+            listener?.onSurfaceCreated(this, it)
         }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        val listener: SurfaceLifecycleListener?
+        val currentSurface: Surface?
         synchronized(surfaceLock) {
             surfaceWidth = width
             surfaceHeight = height
             if (surfaceState == SurfaceState.READY) {
                 surfaceState = SurfaceState.DIRTY
             }
+            currentSurface = surface
+            listener = surfaceLifecycleListener
+        }
+        currentSurface?.let {
+            listener?.onSurfaceChanged(this, it, width, height)
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        val listener: SurfaceLifecycleListener?
         synchronized(surfaceLock) {
             surface = null
+            listener = surfaceLifecycleListener
         }
+        listener?.onSurfaceDestroyed(this)
     }
 
     fun doFrame(glContext: GlContext, presentFrameWrapper: PresentFrameWrapper) {

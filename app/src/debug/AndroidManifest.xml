@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <receiver
+            android:name=".debug.DebugCommandReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="${applicationId}.SET_RENDERER" />
+                <action android:name="${applicationId}.SET_IR" />
+                <action android:name="${applicationId}.SET_JIT" />
+                <action android:name="${applicationId}.LOAD_STATE" />
+                <action android:name="${applicationId}.DUMP_RENDERER_CAPTURE" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="me.magnum.melonds.debug.DebugCommandInitializer"
+                android:value="androidx.startup" />
+        </provider>
+    </application>
+</manifest>

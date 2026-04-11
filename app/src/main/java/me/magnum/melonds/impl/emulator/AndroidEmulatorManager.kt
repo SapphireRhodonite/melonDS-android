@@ -18,6 +18,7 @@ import me.magnum.melonds.domain.model.Cheat
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.EmulatorConfiguration
 import me.magnum.melonds.domain.model.MicSource
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.emulator.EmulatorEvent
 import me.magnum.melonds.domain.model.emulator.FirmwareLaunchResult
 import me.magnum.melonds.domain.model.emulator.RomLaunchResult
@@ -65,6 +66,14 @@ class AndroidEmulatorManager(
             EmulatorEventType.EventRumbleStart -> _emulatorEvents.tryEmit(EmulatorEvent.RumbleStart(data.getInt()))
             EmulatorEventType.EventRumbleStop -> _emulatorEvents.tryEmit(EmulatorEvent.RumbleStop)
             EmulatorEventType.EventEmulatorStop -> getStopReason(data.getInt())?.let { _emulatorEvents.tryEmit(EmulatorEvent.Stop(it)) }
+            EmulatorEventType.EventRendererInitFailed -> getRenderer(data.getInt())?.let { _emulatorEvents.tryEmit(EmulatorEvent.RendererInitFailed(it)) }
+            EmulatorEventType.EventVulkanCompileProgress -> _emulatorEvents.tryEmit(
+                EmulatorEvent.VulkanCompileProgress(
+                    stageId = data.getInt(),
+                    current = data.getInt(),
+                    total = data.getInt(),
+                )
+            )
             EmulatorEventType.EventRAAchievementPrimed -> achievementsSharedFlow.tryEmit(RAEvent.OnAchievementPrimed(data.getLong()))
             EmulatorEventType.EventRAAchievementTriggered -> achievementsSharedFlow.tryEmit(RAEvent.OnAchievementTriggered(data.getLong()))
             EmulatorEventType.EventRAAchievementUnprimed -> achievementsSharedFlow.tryEmit(RAEvent.OnAchievementUnPrimed(data.getLong()))
@@ -139,6 +148,12 @@ class AndroidEmulatorManager(
                 RomLaunchResult.LaunchFailed(loadResult)
             } else {
                 messageQueue.start()
+                if (!MelonEmulator.precompileVulkanPipelines()) {
+                    cameraManager.stopCurrentCameraSource()
+                    MelonEmulator.stopEmulation()
+                    messageQueue.stop()
+                    return@withContext RomLaunchResult.LaunchFailed(MelonEmulator.LoadResult.NDS_FAILED)
+                }
                 MelonEmulator.setupCheats(cheats.toTypedArray())
                 MelonEmulator.startEmulation()
 
@@ -157,6 +172,12 @@ class AndroidEmulatorManager(
                 FirmwareLaunchResult.LaunchFailed(result)
             } else {
                 messageQueue.start()
+                if (!MelonEmulator.precompileVulkanPipelines()) {
+                    cameraManager.stopCurrentCameraSource()
+                    MelonEmulator.stopEmulation()
+                    messageQueue.stop()
+                    return@withContext FirmwareLaunchResult.LaunchFailed(MelonEmulator.FirmwareLoadResult.FIRMWARE_BAD)
+                }
                 MelonEmulator.startEmulation()
                 FirmwareLaunchResult.LaunchSuccessful
             }
@@ -328,5 +349,9 @@ class AndroidEmulatorManager(
             PowerOff -> EmulatorEvent.Stop.Reason.PowerOff
             else -> null
         }
+    }
+
+    private fun getRenderer(internalRenderer: Int): VideoRenderer? {
+        return VideoRenderer.entries.firstOrNull { it.renderer == internalRenderer }
     }
 }

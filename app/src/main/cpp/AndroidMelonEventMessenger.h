@@ -9,6 +9,8 @@ public:
     void onRumbleStart(int durationMs) override;
     void onRumbleStop() override;
     void onEmulatorStop(melonDS::Platform::StopReason reason) override;
+    void onRendererInitFailed(MelonDSAndroid::Renderer renderer) override;
+    void onVulkanCompileProgress(int stageId, int current, int total) override;
 
     void onAchievementPrimed(long achievementId) override;
     void onAchievementTriggered(long achievementId) override;
@@ -30,6 +32,8 @@ private:
     static constexpr int EVENT_RUMBLE_START = 100;
     static constexpr int EVENT_RUMBLE_STOP = 101;
     static constexpr int EVENT_EMULATOR_STOP = 102;
+    static constexpr int EVENT_RENDERER_INIT_FAILED = 103;
+    static constexpr int EVENT_VULKAN_COMPILE_PROGRESS = 104;
 
     static constexpr int EVENT_RA_ACHIEVEMENT_PRIMED = 200;
     static constexpr int EVENT_RA_ACHIEVEMENT_TRIGGERED = 201;

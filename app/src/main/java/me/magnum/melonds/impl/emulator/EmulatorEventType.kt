@@ -17,6 +17,18 @@ enum class EmulatorEventType(val event: Int) {
      * Emulator stop event. No data.
      */
     EventEmulatorStop(102),
+    /**
+     * Renderer init failed. Data:
+     * * renderer value (`i32`)
+     */
+    EventRendererInitFailed(103),
+    /**
+     * Vulkan compile progress. Data:
+     * * stage ID (`i32`)
+     * * current step (`i32`)
+     * * total steps (`i32`)
+     */
+    EventVulkanCompileProgress(104),
 
     /**
      * RA achievement primed. Data:

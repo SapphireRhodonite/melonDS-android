@@ -1,6 +1,8 @@
 package me.magnum.melonds
 
+import android.graphics.Bitmap
 import android.net.Uri
+import android.view.Surface
 import me.magnum.melonds.common.camera.DSiCameraSource
 import me.magnum.melonds.domain.model.Cheat
 import me.magnum.melonds.domain.model.EmulatorConfiguration
@@ -11,6 +13,7 @@ import me.magnum.melonds.domain.model.retroachievements.RARuntimeBridgeConfig
 import me.magnum.melonds.domain.model.retroachievements.RASimpleRuntimeAchievement
 import me.magnum.melonds.domain.model.retroachievements.RASimpleRuntimeAchievementBucketEntry
 import me.magnum.melonds.ui.emulator.render.FrameRenderCallback
+import me.magnum.melonds.ui.emulator.model.VulkanPresentationConfig
 import me.magnum.melonds.ui.emulator.rewind.model.RewindSaveState
 import me.magnum.melonds.ui.emulator.rewind.model.RewindWindow
 import java.nio.ByteBuffer
@@ -93,10 +96,18 @@ object MelonEmulator {
     private external fun bootFirmwareInternal(): Int
 
 	external fun startEmulation()
+    external fun precompileVulkanPipelines(): Boolean
 
     external fun presentFrame(deadlineNs: Long, frameRenderCallback: FrameRenderCallback)
+    external fun attachVulkanSurface(surface: Surface, width: Int, height: Int): Int
+    external fun resizeVulkanSurface(surfaceId: Int, width: Int, height: Int)
+    external fun configureVulkanSurface(surfaceId: Int, presentationConfig: VulkanPresentationConfig, backgroundBitmap: Bitmap?)
+    external fun detachVulkanSurface(surfaceId: Int)
+    external fun presentVulkanFrame(deadlineNs: Long, budgetDeadlineNs: Long)
 
 	external fun getFPS(): Float
+
+    external fun getCurrentRenderer(): Int
 
 	external fun pauseEmulation()
 

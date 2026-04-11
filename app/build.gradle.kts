@@ -92,6 +92,62 @@ android {
     }
 }
 
+val vulkanShaderSources = listOf(
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_InterpSpansShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_BinCombinedShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_SortWorkShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_TriRasterShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_TriRasterCompatShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_DepthBlendShader.comp"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_FinalPassShader.comp"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanCompositorShader.comp"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanSurfacePresenter.vert"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanSurfacePresenter.frag"),
+)
+
+val vulkanShaderHeaders = listOf(
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_InterpSpansShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_BinCombinedShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_SortWorkShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_TriRasterShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_TriRasterCompatShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_DepthBlendShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/GPU3D_Vulkan_FinalPassShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanCompositorShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanSurfacePresenterVertexShaderData.h"),
+    rootProject.file("melonDS-android-lib/src/android/renderer/VulkanSurfacePresenterFragmentShaderData.h"),
+)
+
+val regenerateVulkanSpirv by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Regenerates embedded Vulkan SPIR-V headers from Vulkan GLSL sources."
+    executable = "bash"
+    args(rootProject.file("scripts/regenerate_vulkan_spirv.sh").absolutePath)
+    workingDir = rootProject.projectDir
+
+    inputs.file(rootProject.file("scripts/regenerate_vulkan_spirv.sh"))
+    inputs.files(vulkanShaderSources)
+    outputs.files(vulkanShaderHeaders)
+}
+
+val checkVulkanSpirv by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Checks whether embedded Vulkan SPIR-V headers are synchronized with GLSL sources."
+    executable = "bash"
+    args(rootProject.file("scripts/regenerate_vulkan_spirv.sh").absolutePath, "--check")
+    workingDir = rootProject.projectDir
+
+    inputs.file(rootProject.file("scripts/regenerate_vulkan_spirv.sh"))
+    inputs.files(vulkanShaderSources)
+    outputs.upToDateWhen { false }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(regenerateVulkanSpirv)
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_21

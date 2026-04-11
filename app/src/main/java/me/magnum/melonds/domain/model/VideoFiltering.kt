@@ -1,5 +1,8 @@
 package me.magnum.melonds.domain.model
 
+import androidx.annotation.Keep
+
+@Keep
 enum class VideoFiltering {
     NONE,
     LINEAR,
@@ -10,5 +13,9 @@ enum class VideoFiltering {
     LCD,
     LCD_GRID_DSLITE,
     SCANLINES,
-    CUSTOM
+    CUSTOM;
+
+    fun isSupportedByVulkan(): Boolean {
+        return this == NONE || this == LINEAR
+    }
 }

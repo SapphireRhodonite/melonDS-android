@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import me.magnum.melonds.R
 import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.rom.Rom
@@ -44,6 +45,12 @@ class EmulatorLaunchValidatorDelegate(
                                 is FirmwareLaunchPreconditionCheckResult.BiosConfigurationIncorrect -> {
                                     showIncorrectConfigurationDirectoryDialogForFirmware(it.result.configurationDirectoryResult)
                                 }
+                                is FirmwareLaunchPreconditionCheckResult.RendererUnsupported -> {
+                                    showRendererUnsupportedDialog(it.result.renderer)
+                                }
+                                is FirmwareLaunchPreconditionCheckResult.RendererInitFailed -> {
+                                    showRendererInitFailedDialog(it.result.renderer)
+                                }
                             }
                         }
                         is LaunchValidationResult.Rom -> {
@@ -52,6 +59,12 @@ class EmulatorLaunchValidatorDelegate(
                                 is RomLaunchPreconditionCheckResult.DSiWareTitleValidationFailed -> showDsiWareTitleLoadIssueDialog(it.result.reason)
                                 is RomLaunchPreconditionCheckResult.BiosConfigurationIncorrect -> {
                                     showIncorrectConfigurationDirectoryDialogForRom(it.result.configurationDirectoryResult)
+                                }
+                                is RomLaunchPreconditionCheckResult.RendererUnsupported -> {
+                                    showRendererUnsupportedDialog(it.result.renderer)
+                                }
+                                is RomLaunchPreconditionCheckResult.RendererInitFailed -> {
+                                    showRendererInitFailedDialog(it.result.renderer)
                                 }
                             }
                         }
@@ -126,6 +139,44 @@ class EmulatorLaunchValidatorDelegate(
             .setMessage(R.string.error_invalid_directory_description)
             .setPositiveButton(R.string.ok, null)
             .setOnDismissListener { callback.onValidationAborted() }
+            .show()
+    }
+
+    private fun showRendererUnsupportedDialog(renderer: VideoRenderer) {
+        val rendererLabel = when (renderer) {
+            VideoRenderer.SOFTWARE -> "Software"
+            VideoRenderer.OPENGL -> "OpenGL"
+            VideoRenderer.VULKAN -> "Vulkan"
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle(R.string.renderer_unsupported_title)
+            .setMessage(context.getString(R.string.renderer_unsupported_message, rendererLabel))
+            .setPositiveButton(R.string.settings) { _, _ ->
+                val intent = Intent(context, SettingsActivity::class.java)
+                firmwareSettingsLauncher.launch(intent)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ -> callback.onValidationAborted() }
+            .setOnCancelListener { callback.onValidationAborted() }
+            .show()
+    }
+
+    private fun showRendererInitFailedDialog(renderer: VideoRenderer) {
+        val rendererLabel = when (renderer) {
+            VideoRenderer.SOFTWARE -> "Software"
+            VideoRenderer.OPENGL -> "OpenGL"
+            VideoRenderer.VULKAN -> "Vulkan"
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle(R.string.renderer_init_failed_title)
+            .setMessage(context.getString(R.string.renderer_init_failed_message, rendererLabel))
+            .setPositiveButton(R.string.settings) { _, _ ->
+                val intent = Intent(context, SettingsActivity::class.java)
+                firmwareSettingsLauncher.launch(intent)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ -> callback.onValidationAborted() }
+            .setOnCancelListener { callback.onValidationAborted() }
             .show()
     }
 

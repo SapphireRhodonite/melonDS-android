@@ -16,11 +16,13 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import me.magnum.melonds.domain.model.RuntimeBackground
 import me.magnum.melonds.domain.model.layout.LayoutComponent
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.ui.emulator.DSRenderer
 import me.magnum.melonds.ui.emulator.EmulatorSurfaceView
 import me.magnum.melonds.ui.emulator.RuntimeLayoutView
 import me.magnum.melonds.ui.emulator.model.RuntimeInputLayoutConfiguration
 import me.magnum.melonds.ui.emulator.model.RuntimeRendererConfiguration
+import me.magnum.melonds.ui.emulator.model.VulkanPresentationConfig
 import me.magnum.melonds.ui.layouteditor.model.LayoutTarget
 
 class ExternalPresentation(
@@ -103,6 +105,19 @@ class ExternalPresentation(
             topOnTop = topView?.onTop ?: false,
             bottomOnTop = bottomView?.onTop ?: false,
         )
+
+        frameRenderCoordinator.updateSurfacePresentation(
+            surfaceView,
+            buildVulkanPresentationConfig(
+                topView?.getRect(),
+                bottomView?.getRect(),
+                topView?.baseAlpha ?: 1f,
+                bottomView?.baseAlpha ?: 1f,
+                topView?.onTop ?: false,
+                bottomView?.onTop ?: false,
+            ),
+            currentBackground ?: RuntimeBackground.None,
+        )
     }
 
     fun setPauseOverlayVisibility(visible: Boolean) {
@@ -125,6 +140,7 @@ class ExternalPresentation(
     fun updateRendererConfiguration(newRendererConfiguration: RuntimeRendererConfiguration?) {
         currentRendererConfiguration = newRendererConfiguration
         surfaceView.updateRendererConfiguration(newRendererConfiguration)
+        updateRendererScreenAreas()
     }
 
     override fun onStart() {
@@ -142,5 +158,52 @@ class ExternalPresentation(
     fun updateBackground(background: RuntimeBackground) {
         currentBackground = background
         emulatorRenderer.setBackground(background)
+        updateRendererScreenAreas()
+    }
+
+    private fun buildVulkanPresentationConfig(
+        topScreenRect: me.magnum.melonds.domain.model.Rect?,
+        bottomScreenRect: me.magnum.melonds.domain.model.Rect?,
+        topAlpha: Float,
+        bottomAlpha: Float,
+        topOnTop: Boolean,
+        bottomOnTop: Boolean,
+    ): VulkanPresentationConfig? {
+        val rendererConfiguration = currentRendererConfiguration ?: return null
+        if (rendererConfiguration.renderer != VideoRenderer.VULKAN) {
+            return null
+        }
+
+        val (surfaceWidth, surfaceHeight) = surfaceView.getCurrentSurfaceSize()
+        val (resolvedTopScreenRect, resolvedBottomScreenRect) = resolveVulkanScreenRects(
+            topScreenRect = topScreenRect,
+            bottomScreenRect = bottomScreenRect,
+            surfaceWidth = if (surfaceWidth > 0) surfaceWidth else surfaceView.width,
+            surfaceHeight = if (surfaceHeight > 0) surfaceHeight else surfaceView.height,
+        )
+
+        return VulkanPresentationConfig(
+            topScreenRect = resolvedTopScreenRect,
+            bottomScreenRect = resolvedBottomScreenRect,
+            topAlpha = topAlpha,
+            bottomAlpha = bottomAlpha,
+            topOnTop = topOnTop,
+            bottomOnTop = bottomOnTop,
+            backgroundMode = currentBackground?.mode ?: RuntimeBackground.None.mode,
+            videoFiltering = rendererConfiguration.videoFiltering,
+        )
+    }
+
+    private fun resolveVulkanScreenRects(
+        topScreenRect: me.magnum.melonds.domain.model.Rect?,
+        bottomScreenRect: me.magnum.melonds.domain.model.Rect?,
+        surfaceWidth: Int,
+        surfaceHeight: Int,
+    ): Pair<me.magnum.melonds.domain.model.Rect?, me.magnum.melonds.domain.model.Rect?> {
+        val sanitizedTopRect = topScreenRect?.takeIf { it.width > 0 && it.height > 0 }
+        val sanitizedBottomRect = bottomScreenRect?.takeIf { it.width > 0 && it.height > 0 }
+        if (surfaceWidth <= 0 || surfaceHeight <= 0)
+            return null to null
+        return sanitizedTopRect to sanitizedBottomRect
     }
 }

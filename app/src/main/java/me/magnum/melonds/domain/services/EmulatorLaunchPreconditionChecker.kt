@@ -1,9 +1,12 @@
 package me.magnum.melonds.domain.services
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
 import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
-import me.magnum.melonds.domain.model.dsinand.OpenDSiNandResult
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
@@ -20,6 +23,13 @@ class EmulatorLaunchPreconditionChecker(
 ) {
 
     suspend fun checkRomLaunchPreconditions(rom: Rom): RomLaunchPreconditionCheckResult {
+        getRendererValidationFailureOrNull()?.let {
+            return when (it) {
+                RendererValidationFailure.UNSUPPORTED -> RomLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
+                RendererValidationFailure.INIT_FAILED -> RomLaunchPreconditionCheckResult.RendererInitFailed(VideoRenderer.VULKAN)
+            }
+        }
+
         if (rom.isDsiWareTitle) {
             val dsiWareCheckResult = checkDsiWarePreconditions(rom)
             if (dsiWareCheckResult !is RomLaunchPreconditionCheckResult.Success) {
@@ -35,7 +45,14 @@ class EmulatorLaunchPreconditionChecker(
         return RomLaunchPreconditionCheckResult.Success(rom)
     }
 
-    fun checkFirmwareLaunchPreconditions(consoleType: ConsoleType): FirmwareLaunchPreconditionCheckResult {
+    suspend fun checkFirmwareLaunchPreconditions(consoleType: ConsoleType): FirmwareLaunchPreconditionCheckResult {
+        getRendererValidationFailureOrNull()?.let {
+            return when (it) {
+                RendererValidationFailure.UNSUPPORTED -> FirmwareLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
+                RendererValidationFailure.INIT_FAILED -> FirmwareLaunchPreconditionCheckResult.RendererInitFailed(VideoRenderer.VULKAN)
+            }
+        }
+
         val configurationDirResult = configurationDirectoryVerifier.checkConsoleConfigurationDirectory(consoleType)
         if (configurationDirResult.status != ConfigurationDirResult.Status.VALID) {
             return FirmwareLaunchPreconditionCheckResult.BiosConfigurationIncorrect(configurationDirResult)
@@ -77,5 +94,24 @@ class EmulatorLaunchPreconditionChecker(
 
         val romTargetConsoleType = rom.config.runtimeConsoleType.targetConsoleType ?: settingsRepository.getDefaultConsoleType()
         return configurationDirectoryVerifier.checkConsoleConfigurationDirectory(romTargetConsoleType)
+    }
+
+    private suspend fun getRendererValidationFailureOrNull(): RendererValidationFailure? {
+        if (settingsRepository.getCurrentVideoRenderer() != VideoRenderer.VULKAN) {
+            return null
+        }
+
+        return withContext(Dispatchers.Default) {
+            when {
+                !MelonDSAndroidInterface.isVulkanRendererSupported() -> RendererValidationFailure.UNSUPPORTED
+                !MelonDSAndroidInterface.canInitializeVulkanRenderer() -> RendererValidationFailure.INIT_FAILED
+                else -> null
+            }
+        }
+    }
+
+    private enum class RendererValidationFailure {
+        UNSUPPORTED,
+        INIT_FAILED,
     }
 }

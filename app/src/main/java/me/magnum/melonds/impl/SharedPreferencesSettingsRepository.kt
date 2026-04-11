@@ -107,6 +107,7 @@ class SharedPreferencesSettingsRepository(
         val filtering: VideoFiltering,
         val threadedRenderingEnabled: Boolean,
         val resolutionScaling: Int,
+        val rendererDebugToolsEnabled: Boolean,
     )
     private data class CoverageFixConfigurationInputs(
         val enabled: Boolean,
@@ -131,12 +132,14 @@ class SharedPreferencesSettingsRepository(
             getVideoFiltering(),
             isThreadedRenderingEnabled(),
             getVideoInternalResolutionScaling(),
-        ) { renderer, filtering, threadedRenderingEnabled, resolutionScaling ->
+            isRendererDebugToolsEnabled(),
+        ) { renderer, filtering, threadedRenderingEnabled, resolutionScaling, rendererDebugToolsEnabled ->
             CoreRenderConfigurationInputs(
                 renderer,
                 filtering,
                 threadedRenderingEnabled,
                 resolutionScaling,
+                rendererDebugToolsEnabled,
             )
         }
 
@@ -167,12 +170,22 @@ class SharedPreferencesSettingsRepository(
         }
 
         renderConfigurationFlow = combine(renderInputsFlow, observeVideoCustomShader()) { renderInputs, customShaderUri ->
-            val customShader = loadCustomShader(customShaderUri)
+            val effectiveFiltering = when {
+                renderInputs.core.renderer == VideoRenderer.VULKAN && !renderInputs.core.filtering.isSupportedByVulkan() -> VideoFiltering.NONE
+                else -> renderInputs.core.filtering
+            }
+            val customShader = when {
+                renderInputs.core.renderer == VideoRenderer.VULKAN -> null
+                else -> loadCustomShader(customShaderUri)
+            }
+            val effectiveThreadedRendering = renderInputs.core.threadedRenderingEnabled &&
+                (renderInputs.core.renderer == VideoRenderer.SOFTWARE || renderInputs.core.renderer == VideoRenderer.VULKAN)
             RendererConfiguration(
                 renderInputs.core.renderer,
-                renderInputs.core.filtering,
-                renderInputs.core.threadedRenderingEnabled,
+                effectiveFiltering,
+                effectiveThreadedRendering,
                 renderInputs.core.resolutionScaling,
+                renderInputs.core.rendererDebugToolsEnabled,
                 renderInputs.coverageFix.enabled,
                 renderInputs.coverageFix.coveragePx,
                 renderInputs.coverageFix.depthBias,
@@ -359,10 +372,20 @@ class SharedPreferencesSettingsRepository(
         return preferences.getBoolean("enable_jit", defaultJitEnabled)
     }
 
+    override fun getCurrentVideoRenderer(): VideoRenderer {
+        val videoRendererPreference = preferences.getString("video_renderer", "software")!!
+        return VideoRenderer.valueOf(videoRendererPreference.uppercase())
+    }
+
+    override fun setCurrentVideoRenderer(renderer: VideoRenderer) {
+        preferences.edit {
+            putString("video_renderer", renderer.name.lowercase())
+        }
+    }
+
     override fun getVideoRenderer(): Flow<VideoRenderer> {
         return getOrCreatePreferenceSharedFlow("video_renderer") {
-            val videoRendererPreference = preferences.getString("video_renderer", "software")!!
-            VideoRenderer.valueOf(videoRendererPreference.uppercase())
+            getCurrentVideoRenderer()
         }
     }
 
@@ -423,6 +446,12 @@ class SharedPreferencesSettingsRepository(
     override fun isThreadedRenderingEnabled(): Flow<Boolean> {
         return getOrCreatePreferenceSharedFlow("enable_threaded_rendering") {
             preferences.getBoolean("enable_threaded_rendering", true)
+        }
+    }
+
+    override fun isRendererDebugToolsEnabled(): Flow<Boolean> {
+        return getOrCreatePreferenceSharedFlow("video_renderer_debug_tools_enabled") {
+            preferences.getBoolean("video_renderer_debug_tools_enabled", false)
         }
     }
 

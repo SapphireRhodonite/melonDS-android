@@ -180,6 +180,7 @@ std::unique_ptr<MelonDSAndroid::RenderSettings> MelonDSAndroidConfiguration::bui
     jclass renderSettingsClass = env->GetObjectClass(renderSettings);
     jmethodID getResolutionScalingMethod = env->GetMethodID(renderSettingsClass, "getResolutionScaling", "()I");
     jboolean threadedRendering = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "threadedRendering", "Z"));
+    jboolean rendererDebugToolsEnabled = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "rendererDebugToolsEnabled", "Z"));
     jboolean conservativeCoverageEnabled = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "conservativeCoverageEnabled", "Z"));
     jfloat conservativeCoveragePx = env->GetFloatField(renderSettings, env->GetFieldID(renderSettingsClass, "conservativeCoveragePx", "F"));
     jfloat conservativeCoverageDepthBias = env->GetFloatField(renderSettings, env->GetFieldID(renderSettingsClass, "conservativeCoverageDepthBias", "F"));
@@ -195,6 +196,24 @@ std::unique_ptr<MelonDSAndroid::RenderSettings> MelonDSAndroidConfiguration::bui
             MelonDSAndroid::OpenGlRenderSettings {
                 .betterPolygons = false,
                 .scale = internalResolutionScaling,
+                .rendererDebugToolsEnabled = rendererDebugToolsEnabled != 0,
+                .conservativeCoverageEnabled = conservativeCoverageEnabled != 0,
+                .conservativeCoveragePx = (float)conservativeCoveragePx,
+                .conservativeCoverageDepthBias = (float)conservativeCoverageDepthBias,
+                .conservativeCoverageApplyRepeat = conservativeCoverageApplyRepeat != 0,
+                .conservativeCoverageApplyClamp = conservativeCoverageApplyClamp != 0,
+                .debug3dClearMagenta = debug3dClearMagenta != 0,
+            }
+        );
+    }
+    else if (renderer == MelonDSAndroid::Renderer::Vulkan)
+    {
+        settings = std::make_unique<MelonDSAndroid::VulkanRenderSettings>(
+            MelonDSAndroid::VulkanRenderSettings {
+                .threadedRendering = (bool) threadedRendering,
+                .betterPolygons = true,
+                .scale = internalResolutionScaling,
+                .rendererDebugToolsEnabled = rendererDebugToolsEnabled != 0,
                 .conservativeCoverageEnabled = conservativeCoverageEnabled != 0,
                 .conservativeCoveragePx = (float)conservativeCoveragePx,
                 .conservativeCoverageDepthBias = (float)conservativeCoverageDepthBias,
@@ -217,7 +236,8 @@ std::unique_ptr<MelonDSAndroid::RenderSettings> MelonDSAndroidConfiguration::bui
     {
         settings = std::make_unique<MelonDSAndroid::SoftwareRenderSettings>(
             MelonDSAndroid::SoftwareRenderSettings {
-                .threadedRendering = (bool) threadedRendering
+                .threadedRendering = (bool) threadedRendering,
+                .rendererDebugToolsEnabled = rendererDebugToolsEnabled != 0
             }
         );
     }

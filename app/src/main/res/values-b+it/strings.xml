@@ -427,6 +427,7 @@
     <string-array name="video_renderer_options">
         <item>Software</item>
         <item>OpenGL</item>
+        <item>Vulkan</item>
     </string-array>
 
     <string-array name="video_internal_resolution_options">

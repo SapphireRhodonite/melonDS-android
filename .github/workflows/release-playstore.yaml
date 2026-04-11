@@ -35,7 +35,18 @@ jobs:
           echo "MELONDS_KEY_ALIAS=melonds-playstore" >> local.properties
           echo "MELONDS_KEY_PASSWORD=$MELONDS_KEY_PASSWORD" >> local.properties
           chmod +x ./gradlew
-          ./gradlew :app:assemblePlayStoreProdRelease
+          ./gradlew :app:regenerateVulkanSpirv :app:assemblePlayStoreProdRelease
+
+      - name: Report Vulkan SPIR-V Header Changes
+        if: always()
+        run: |
+          CHANGED_HEADERS="$(git ls-files -m -- 'melonDS-android-lib/src/*ShaderData.h' 'melonDS-android-lib/src/android/renderer/*ShaderData.h')"
+          if [[ -n "$CHANGED_HEADERS" ]]; then
+            echo "::warning::Vulkan SPIR-V headers changed during CI build. Commit regenerated headers."
+            echo "$CHANGED_HEADERS"
+          else
+            echo "No Vulkan SPIR-V header changes detected."
+          fi
 
       - name: Get Version
         id: release_params

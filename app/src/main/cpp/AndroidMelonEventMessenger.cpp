@@ -19,6 +19,27 @@ void AndroidMelonEventMessenger::onEmulatorStop(melonDS::Platform::StopReason re
     MelonDSAndroid::fireEmulatorEvent(EVENT_EMULATOR_STOP, sizeof(reasonInt), &reasonInt);
 }
 
+void AndroidMelonEventMessenger::onRendererInitFailed(MelonDSAndroid::Renderer renderer)
+{
+    int32_t rendererInt = static_cast<int32_t>(renderer);
+    MelonDSAndroid::fireEmulatorEvent(EVENT_RENDERER_INIT_FAILED, sizeof(rendererInt), &rendererInt);
+}
+
+void AndroidMelonEventMessenger::onVulkanCompileProgress(int stageId, int current, int total)
+{
+    struct
+    {
+        int32_t stageId;
+        int32_t current;
+        int32_t total;
+    } data{
+        .stageId = static_cast<int32_t>(stageId),
+        .current = static_cast<int32_t>(current),
+        .total = static_cast<int32_t>(total),
+    };
+    MelonDSAndroid::fireEmulatorEvent(EVENT_VULKAN_COMPILE_PROGRESS, sizeof(data), &data);
+}
+
 void AndroidMelonEventMessenger::onAchievementPrimed(long achievementId)
 {
     int64_t achievementIdLong = (int64_t) achievementId;

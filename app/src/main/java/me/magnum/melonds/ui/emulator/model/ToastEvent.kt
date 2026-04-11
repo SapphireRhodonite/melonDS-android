@@ -1,5 +1,7 @@
 package me.magnum.melonds.ui.emulator.model
 
+import me.magnum.melonds.domain.model.VideoRenderer
+
 sealed class ToastEvent {
     data object GbaLoadFailed : ToastEvent()
     data object RewindNotEnabled : ToastEvent()
@@ -47,6 +49,13 @@ sealed class ToastEvent {
     data class OfflineAchievementsNotSyncedSummary(
         val skippedCount: Int,
     ) : ToastEvent()
+    data class RendererInitFailed(
+        val renderer: VideoRenderer,
+    ) : ToastEvent()
+    data class RendererDebugCaptureLogged(
+        val captureId: String,
+    ) : ToastEvent()
+    data object RendererDebugCaptureFailed : ToastEvent()
     data object GbaModeNotSupported : ToastEvent()
     data object InternalError : ToastEvent()
 }

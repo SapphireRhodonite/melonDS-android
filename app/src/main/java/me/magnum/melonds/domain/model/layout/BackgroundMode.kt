@@ -1,5 +1,8 @@
 package me.magnum.melonds.domain.model.layout
 
+import androidx.annotation.Keep
+
+@Keep
 enum class BackgroundMode {
     STRETCH,
     FIT_CENTER,

@@ -9,10 +9,12 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import dagger.hilt.android.AndroidEntryPoint
 import me.magnum.melonds.domain.repositories.SettingsRepository
+import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.R
 import me.magnum.melonds.common.DirectoryAccessValidator
 import me.magnum.melonds.common.UriPermissionManager
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.DualScreenPreset
 import me.magnum.melonds.domain.model.ScreenAlignment
 import me.magnum.melonds.domain.model.camera.DSiCameraSourceType
@@ -43,27 +45,37 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     @Inject lateinit var directoryAccessValidator: DirectoryAccessValidator
     @Inject lateinit var settingsRepository: SettingsRepository
 
-    private val softwareRendererPreferences = mutableListOf<Preference>()
-    private val openGlRendererPreferences = mutableListOf<Preference>()
+    private val threadedRendererPreferences = mutableListOf<Preference>()
+    private val highResRendererPreferences = mutableListOf<Preference>()
+    private val rendererDebugPreferences = mutableListOf<Preference>()
+    private val coverageFixPreferences = mutableListOf<Preference>()
 
     private lateinit var dualScreenPresetsPreference: Preference
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_video, rootKey)
 
-        softwareRendererPreferences.apply {
+        threadedRendererPreferences.apply {
             add(findPreference("enable_threaded_rendering")!!)
         }
 
-        openGlRendererPreferences.apply {
+        highResRendererPreferences.apply {
             add(findPreference("video_internal_resolution")!!)
             add(findPreference("video_hacks_category")!!)
+            add(findPreference("video_debug_3d_clear_magenta")!!)
+        }
+
+        rendererDebugPreferences.apply {
+            add(findPreference("video_hacks_category")!!)
+            add(findPreference("video_renderer_debug_tools_enabled")!!)
+        }
+
+        coverageFixPreferences.apply {
             add(findPreference("video_conservative_coverage_enabled")!!)
             add(findPreference("video_conservative_coverage_px")!!)
             add(findPreference("video_conservative_coverage_apply_repeat")!!)
             add(findPreference("video_conservative_coverage_apply_clamp")!!)
             add(findPreference("video_conservative_coverage_depth_bias")!!)
-            add(findPreference("video_debug_3d_clear_magenta")!!)
         }
 
         val rendererPreference = findPreference<ListPreference>("video_renderer")!!
@@ -72,19 +84,45 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         val dsiCameraImagePreference = findPreference<StoragePickerPreference>("dsi_camera_static_image")!!
         val customShaderPreference = findPreference<StoragePickerPreference>("video_custom_shader")!!
         dualScreenPresetsPreference = findPreference("dual_screen_presets")!!
+        val allFilteringValues = resources.getStringArray(R.array.video_filtering_values)
+        val allFilteringEntries = resources.getStringArray(R.array.video_filtering_options)
 
         val activityManager = requireContext().getSystemService<ActivityManager>()
+        val deviceGlesVersion = activityManager?.deviceConfigurationInfo?.reqGlEsVersion ?: 0
+        val supportsOpenGlRenderer = deviceGlesVersion >= GLES_3_2
 
         rendererPreference.apply {
-            val deviceGlesVersion = activityManager?.deviceConfigurationInfo?.reqGlEsVersion ?: 0
-            if (deviceGlesVersion >= GLES_3_2) {
-                setOnPreferenceChangeListener { _, newValue ->
-                    onRendererPreferenceChanged(newValue as String)
-                    true
+            if (!supportsOpenGlRenderer) {
+                val values = context.resources.getStringArray(R.array.video_renderer_values)
+                val entries = context.resources.getStringArray(R.array.video_renderer_options)
+                val filteredPairs = values.zip(entries).filterNot { it.first == "opengl" }
+                entryValues = filteredPairs.map { it.first }.toTypedArray()
+                this.entries = filteredPairs.map { it.second }.toTypedArray()
+
+                if (value.equals("opengl", ignoreCase = true)) {
+                    value = "software"
                 }
-            } else {
-                // GLES 3.2 is not supported. Remove the preference
-                isVisible = false
+            }
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val rendererValue = newValue as String
+                val newRenderer = enumValueOfIgnoreCase<VideoRenderer>(rendererValue)
+                if (newRenderer == VideoRenderer.VULKAN) {
+                    val canUseVulkan = MelonDSAndroidInterface.isVulkanRendererSupported()
+                    if (!canUseVulkan) {
+                        showVulkanUnavailableDialog()
+                        return@setOnPreferenceChangeListener false
+                    }
+                }
+
+                onRendererPreferenceChanged(
+                    rendererValue = rendererValue,
+                    videoFilteringPreference = videoFilteringPreference,
+                    customShaderPreference = customShaderPreference,
+                    allFilteringValues = allFilteringValues,
+                    allFilteringEntries = allFilteringEntries,
+                )
+                true
             }
         }
 
@@ -101,37 +139,128 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         helper.setupStoragePickerPreference(dsiCameraImagePreference)
         helper.setupStoragePickerPreference(customShaderPreference)
 
-        customShaderPreference.isEnabled = videoFilteringPreference.value == "custom"
+        updateFilteringPreferences(
+            renderer = enumValueOfIgnoreCase(rendererPreference.value),
+            videoFilteringPreference = videoFilteringPreference,
+            customShaderPreference = customShaderPreference,
+            allFilteringValues = allFilteringValues,
+            allFilteringEntries = allFilteringEntries,
+        )
         videoFilteringPreference.setOnPreferenceChangeListener { _, newValue ->
-            customShaderPreference.isEnabled = (newValue as String) == "custom"
+            customShaderPreference.isEnabled =
+                enumValueOfIgnoreCase<VideoRenderer>(rendererPreference.value) != VideoRenderer.VULKAN &&
+                    (newValue as String) == "custom"
             true
         }
 
-        onRendererPreferenceChanged(rendererPreference.value)
+        onRendererPreferenceChanged(
+            rendererValue = rendererPreference.value,
+            videoFilteringPreference = videoFilteringPreference,
+            customShaderPreference = customShaderPreference,
+            allFilteringValues = allFilteringValues,
+            allFilteringEntries = allFilteringEntries,
+        )
         updateDsiCameraImagePreference(dsiCameraImagePreference, dsiCameraSourcePreference.value)
         updateDualScreenPresetSummary()
     }
 
-    private fun onRendererPreferenceChanged(rendererValue: String) {
+    private fun onRendererPreferenceChanged(
+        rendererValue: String,
+        videoFilteringPreference: ListPreference,
+        customShaderPreference: StoragePickerPreference,
+        allFilteringValues: Array<String>,
+        allFilteringEntries: Array<String>,
+    ) {
         val newRenderer = enumValueOfIgnoreCase<VideoRenderer>(rendererValue)
         when (newRenderer) {
             VideoRenderer.SOFTWARE -> {
-                softwareRendererPreferences.forEach {
+                threadedRendererPreferences.forEach {
                     it.isVisible = true
                 }
-                openGlRendererPreferences.forEach {
+                highResRendererPreferences.forEach {
                     it.isVisible = false
+                }
+                coverageFixPreferences.forEach {
+                    it.isVisible = false
+                }
+                rendererDebugPreferences.forEach {
+                    it.isVisible = true
                 }
             }
             VideoRenderer.OPENGL -> {
-                softwareRendererPreferences.forEach {
+                threadedRendererPreferences.forEach {
                     it.isVisible = false
                 }
-                openGlRendererPreferences.forEach {
+                highResRendererPreferences.forEach {
+                    it.isVisible = true
+                }
+                coverageFixPreferences.forEach {
+                    it.isVisible = true
+                }
+                rendererDebugPreferences.forEach {
+                    it.isVisible = true
+                }
+            }
+            VideoRenderer.VULKAN -> {
+                threadedRendererPreferences.forEach {
+                    it.isVisible = true
+                }
+                highResRendererPreferences.forEach {
+                    it.isVisible = true
+                }
+                coverageFixPreferences.forEach {
+                    it.isVisible = true
+                }
+                rendererDebugPreferences.forEach {
                     it.isVisible = true
                 }
             }
         }
+
+        updateFilteringPreferences(
+            renderer = newRenderer,
+            videoFilteringPreference = videoFilteringPreference,
+            customShaderPreference = customShaderPreference,
+            allFilteringValues = allFilteringValues,
+            allFilteringEntries = allFilteringEntries,
+        )
+    }
+
+    private fun updateFilteringPreferences(
+        renderer: VideoRenderer,
+        videoFilteringPreference: ListPreference,
+        customShaderPreference: StoragePickerPreference,
+        allFilteringValues: Array<String>,
+        allFilteringEntries: Array<String>,
+    ) {
+        val filteredPairs = if (renderer == VideoRenderer.VULKAN) {
+            allFilteringValues.zip(allFilteringEntries).filter { (value, _) ->
+                enumValueOfIgnoreCase<VideoFiltering>(value).isSupportedByVulkan()
+            }
+        } else {
+            allFilteringValues.zip(allFilteringEntries)
+        }
+
+        videoFilteringPreference.entryValues = filteredPairs.map { it.first }.toTypedArray()
+        videoFilteringPreference.entries = filteredPairs.map { it.second }.toTypedArray()
+
+        if (renderer == VideoRenderer.VULKAN) {
+            val currentFiltering = enumValueOfIgnoreCase<VideoFiltering>(videoFilteringPreference.value)
+            if (!currentFiltering.isSupportedByVulkan()) {
+                videoFilteringPreference.value = VideoFiltering.NONE.name.lowercase()
+            }
+        }
+
+        customShaderPreference.isEnabled =
+            renderer != VideoRenderer.VULKAN && videoFilteringPreference.value == VideoFiltering.CUSTOM.name.lowercase()
+    }
+
+    private fun showVulkanUnavailableDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.renderer_init_failed_title)
+            .setMessage(getString(R.string.renderer_init_failed_message, "Vulkan"))
+            .setPositiveButton(R.string.ok, null)
+            .show()
     }
 
     private fun updateDsiCameraImagePreference(preference: StoragePickerPreference, dsiCameraSourceValue: String) {

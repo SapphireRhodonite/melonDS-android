@@ -48,6 +48,32 @@
             android:textColor="@android:color/white"
             android:text="@string/info_loading"/>
 
+    <ProgressBar
+            android:id="@+id/progressLoading"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="260dp"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:indeterminate="true"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/textLoading"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="12dp"/>
+
+    <TextView
+            android:id="@+id/textLoadingDetail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/progressLoading"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_marginTop="8dp"
+            tools:text="Compiling Vulkan shaders 2/4"/>
+
     <RelativeLayout
             android:id="@+id/layout_rewind"
             android:layout_width="match_parent"

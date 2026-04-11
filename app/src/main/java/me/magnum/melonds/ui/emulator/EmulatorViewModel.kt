@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.R
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
@@ -56,6 +57,7 @@ import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.SCREEN_HEIGHT
 import me.magnum.melonds.domain.model.SCREEN_WIDTH
 import me.magnum.melonds.domain.model.ScreenAlignment
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.defaultExternalAlignment
 import me.magnum.melonds.domain.model.defaultInternalAlignment
 import me.magnum.melonds.domain.model.emulator.EmulatorEvent
@@ -88,6 +90,7 @@ import me.magnum.melonds.domain.repositories.SaveStatesRepository
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.domain.services.EmulatorManager
 import me.magnum.melonds.impl.emulator.EmulatorSession
+import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureLogger
 import me.magnum.melonds.impl.retroachievements.offline.OfflineLedgerIntegrity
 import me.magnum.melonds.impl.retroachievements.offline.OfflineLedgerRepository
 import me.magnum.melonds.impl.retroachievements.offline.OfflinePrefetchCacheAchievement
@@ -115,6 +118,7 @@ import me.magnum.melonds.ui.emulator.model.RAIntegrationEvent
 import me.magnum.melonds.ui.emulator.model.RuntimeInputLayoutConfiguration
 import me.magnum.melonds.ui.emulator.model.RuntimeRendererConfiguration
 import me.magnum.melonds.ui.emulator.model.ToastEvent
+import me.magnum.melonds.ui.emulator.model.VulkanCompileProgress
 import me.magnum.melonds.ui.emulator.rewind.model.RewindSaveState
 import me.magnum.melonds.ui.emulator.rom.RomPauseMenuOption
 import me.magnum.melonds.utils.EventSharedFlow
@@ -219,6 +223,7 @@ class EmulatorViewModel @Inject constructor(
     private var activeRuntimeBridgeConfig: RARuntimeBridgeConfig? = null
     private var activeRuntimePath: RetroAchievementsRuntimePath = RetroAchievementsRuntimePath.DISABLED
     private var didShowRuntimeFallbackEvent = false
+    private var didReceiveRendererInitFailure = false
     private val announcedMasteryKeys = mutableSetOf<Pair<Long, Boolean>>()
     private val pendingRuntimeAchievementTriggers = mutableMapOf<Long, Long>()
     private val pendingRuntimeLeaderboardCompletions = mutableMapOf<Long, Long>()
@@ -425,7 +430,7 @@ class EmulatorViewModel @Inject constructor(
 
     private fun loadRom(rom: Rom) {
         viewModelScope.launch {
-            resetEmulatorState(EmulatorState.LoadingRom)
+            resetEmulatorState(EmulatorState.LoadingRom())
             sessionCoroutineScope.launch {
                 launchRom(rom)
             }
@@ -434,7 +439,7 @@ class EmulatorViewModel @Inject constructor(
 
     private fun loadRom(romUri: Uri) {
         viewModelScope.launch {
-            resetEmulatorState(EmulatorState.LoadingRom)
+            resetEmulatorState(EmulatorState.LoadingRom())
             sessionCoroutineScope.launch {
                 val rom = romsRepository.getRomAtUri(romUri)
                 if (rom != null) {
@@ -448,7 +453,7 @@ class EmulatorViewModel @Inject constructor(
 
     private fun loadRom(romPath: String) {
         viewModelScope.launch {
-            resetEmulatorState(EmulatorState.LoadingRom)
+            resetEmulatorState(EmulatorState.LoadingRom())
             sessionCoroutineScope.launch {
                 val rom = romsRepository.getRomAtPath(romPath)
                 if (rom != null) {
@@ -686,7 +691,7 @@ class EmulatorViewModel @Inject constructor(
 
     private fun loadFirmware(consoleType: ConsoleType) {
         viewModelScope.launch {
-            resetEmulatorState(EmulatorState.LoadingFirmware)
+            resetEmulatorState(EmulatorState.LoadingFirmware())
             startEmulatorSession(EmulatorSession.SessionType.FirmwareSession(consoleType))
             sessionCoroutineScope.launch {
                 startObservingMainScreenBackground()
@@ -787,6 +792,17 @@ class EmulatorViewModel @Inject constructor(
     fun onSettingsChanged() {
         val currentState = _emulatorState.value
         sessionCoroutineScope.launch {
+            if (settingsRepository.getCurrentVideoRenderer() == VideoRenderer.VULKAN) {
+                val canUseVulkan = MelonDSAndroidInterface.isVulkanRendererSupported() &&
+                    MelonDSAndroidInterface.canInitializeVulkanRenderer()
+                if (!canUseVulkan) {
+                    val activeRenderer = getRuntimeRendererOrNull() ?: VideoRenderer.SOFTWARE
+                    settingsRepository.setCurrentVideoRenderer(activeRenderer)
+                    _toastEvent.tryEmit(ToastEvent.RendererInitFailed(VideoRenderer.VULKAN))
+                    return@launch
+                }
+            }
+
             val sessionUpdateActions = emulatorSession.updateRetroAchievementsSettings(
                 retroAchievementsRepository.isUserAuthenticated(),
                 settingsRepository.isRetroAchievementsHardcoreEnabled(),
@@ -804,6 +820,10 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
+    fun getConfiguredVideoRenderer(): VideoRenderer {
+        return settingsRepository.getCurrentVideoRenderer()
+    }
+
     fun onCheatsChanged() {
         val rom = (_emulatorState.value as? EmulatorState.RunningRom)?.rom ?: return
 
@@ -819,10 +839,11 @@ class EmulatorViewModel @Inject constructor(
         sessionCoroutineScope.launch {
             emulatorManager.pauseEmulator()
             if (showPauseMenu) {
+                val rendererDebugToolsEnabled = settingsRepository.isRendererDebugToolsEnabled().firstOrNull() == true
                 val pauseOptions = when (_emulatorState.value) {
                     is EmulatorState.RunningRom -> {
                         RomPauseMenuOption.entries.filter {
-                            filterRomPauseMenuOption(it)
+                            filterRomPauseMenuOption(it, rendererDebugToolsEnabled)
                         }
                     }
                     is EmulatorState.RunningFirmware -> {
@@ -1025,6 +1046,7 @@ class EmulatorViewModel @Inject constructor(
                     }
                     RomPauseMenuOption.VIEW_ACHIEVEMENTS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowAchievementList)
                     RomPauseMenuOption.PRESETS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowDualScreenPresets)
+                    RomPauseMenuOption.RENDERER_DEBUG_CAPTURE -> dumpRendererDebugCapture()
                     RomPauseMenuOption.RESET -> resetEmulator()
                     RomPauseMenuOption.EXIT -> {
                         requestExitRom()
@@ -1040,6 +1062,27 @@ class EmulatorViewModel @Inject constructor(
                         _uiEvent.tryEmit(EmulatorUiEvent.CloseEmulator)
                     }
                 }
+            }
+        }
+    }
+
+    private fun dumpRendererDebugCapture() {
+        sessionCoroutineScope.launch {
+            val rendererDebugToolsEnabled = settingsRepository.isRendererDebugToolsEnabled().firstOrNull() == true
+            if (!rendererDebugToolsEnabled) {
+                _toastEvent.emit(ToastEvent.RendererDebugCaptureFailed)
+                return@launch
+            }
+
+            val configuredRenderer = settingsRepository.getCurrentVideoRenderer()
+            val captureResult = withContext(Dispatchers.Default) {
+                RendererDebugCaptureLogger.dumpPauseMenuCapture(configuredRenderer)
+            }
+
+            if (captureResult.success) {
+                _toastEvent.emit(ToastEvent.RendererDebugCaptureLogged(captureResult.captureId))
+            } else {
+                _toastEvent.emit(ToastEvent.RendererDebugCaptureFailed)
             }
         }
     }
@@ -1435,6 +1478,7 @@ class EmulatorViewModel @Inject constructor(
         activeRuntimeBridgeConfig = null
         activeRuntimePath = RetroAchievementsRuntimePath.DISABLED
         didShowRuntimeFallbackEvent = false
+        didReceiveRendererInitFailure = false
         announcedMasteryKeys.clear()
         pendingRuntimeAchievementTriggers.clear()
         pendingRuntimeLeaderboardCompletions.clear()
@@ -1446,16 +1490,47 @@ class EmulatorViewModel @Inject constructor(
                 when (it) {
                     is EmulatorEvent.RumbleStart -> _rumbleEvent.tryEmit(RumbleEvent.RumbleStart(it.duration))
                     EmulatorEvent.RumbleStop -> _rumbleEvent.tryEmit(RumbleEvent.RumbleStop)
+                    is EmulatorEvent.RendererInitFailed -> {
+                        didReceiveRendererInitFailure = true
+                        val failedRenderer = it.renderer
+                        settingsRepository.getCurrentVideoRenderer()
+                            .takeIf { configuredRenderer -> configuredRenderer == failedRenderer }
+                            ?.let {
+                                val activeRenderer = getRuntimeRendererOrNull()
+                                if (activeRenderer != null && activeRenderer != failedRenderer) {
+                                    settingsRepository.setCurrentVideoRenderer(activeRenderer)
+                                }
+                        }
+                        _toastEvent.tryEmit(ToastEvent.RendererInitFailed(failedRenderer))
+                    }
+                    is EmulatorEvent.VulkanCompileProgress -> updateLoadingCompileProgress(it)
                     is EmulatorEvent.Stop -> {
                         when (it.reason) {
                             EmulatorEvent.Stop.Reason.GBAModeNotSupported -> _toastEvent.tryEmit(ToastEvent.GbaModeNotSupported)
-                            EmulatorEvent.Stop.Reason.BadExceptionRegion -> _toastEvent.tryEmit(ToastEvent.InternalError)
+                            EmulatorEvent.Stop.Reason.BadExceptionRegion -> {
+                                if (!didReceiveRendererInitFailure) {
+                                    _toastEvent.tryEmit(ToastEvent.InternalError)
+                                }
+                            }
                             EmulatorEvent.Stop.Reason.PowerOff -> { /* no-op */ }
                         }
                         stopEmulatorAndExit()
                     }
                 }
             }
+        }
+    }
+
+    private fun updateLoadingCompileProgress(progressEvent: EmulatorEvent.VulkanCompileProgress) {
+        val progress = VulkanCompileProgress(
+            stageId = progressEvent.stageId,
+            current = progressEvent.current,
+            total = progressEvent.total,
+        )
+        when (val currentState = _emulatorState.value) {
+            is EmulatorState.LoadingRom -> _emulatorState.value = currentState.copy(vulkanCompileProgress = progress)
+            is EmulatorState.LoadingFirmware -> _emulatorState.value = currentState.copy(vulkanCompileProgress = progress)
+            else -> Unit
         }
     }
 
@@ -1531,7 +1606,12 @@ class EmulatorViewModel @Inject constructor(
     private fun startObservingRendererConfiguration() {
         sessionCoroutineScope.launch {
             settingsRepository.observeRenderConfiguration().collectLatest {
-                _runtimeRendererConfiguration.value = RuntimeRendererConfiguration(it.videoFiltering, it.resolutionScaling, it.customShader)
+                _runtimeRendererConfiguration.value = RuntimeRendererConfiguration(
+                    renderer = it.renderer,
+                    videoFiltering = it.videoFiltering,
+                    resolutionScaling = it.resolutionScaling,
+                    customShader = it.customShader,
+                )
             }
         }
     }
@@ -1563,6 +1643,11 @@ class EmulatorViewModel @Inject constructor(
                         emitAll(layoutsRepository.observeLayout(LayoutConfiguration.DEFAULT_ID))
                     }
             }
+    }
+
+    private fun getRuntimeRendererOrNull(): VideoRenderer? {
+        val renderer = MelonEmulator.getCurrentRenderer()
+        return VideoRenderer.entries.firstOrNull { it.renderer == renderer }
     }
 
     private fun getRomInfo(rom: Rom): RomInfo? {
@@ -2905,13 +2990,14 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
-    private fun filterRomPauseMenuOption(option: RomPauseMenuOption): Boolean {
+    private fun filterRomPauseMenuOption(option: RomPauseMenuOption, rendererDebugToolsEnabled: Boolean): Boolean {
         return when (option) {
             RomPauseMenuOption.SAVE_STATE -> emulatorSession.areSaveStatesAllowed()
             RomPauseMenuOption.REWIND -> settingsRepository.isRewindEnabled() && emulatorSession.areSaveStateLoadsAllowed()
             RomPauseMenuOption.LOAD_STATE -> emulatorSession.areSaveStateLoadsAllowed()
             RomPauseMenuOption.CHEATS -> emulatorSession.areCheatsEnabled()
             RomPauseMenuOption.VIEW_ACHIEVEMENTS -> emulatorSession.isRetroAchievementsEnabledForSession()
+            RomPauseMenuOption.RENDERER_DEBUG_CAPTURE -> rendererDebugToolsEnabled
             else -> true
         }
     }

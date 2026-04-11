@@ -30,6 +30,18 @@
                     app:visibilityMode="ignore" />
         </Constraint>
 
+        <Constraint android:id="@+id/progressLoading">
+            <PropertySet
+                    app:applyMotionScene="false"
+                    app:visibilityMode="ignore" />
+        </Constraint>
+
+        <Constraint android:id="@+id/textLoadingDetail">
+            <PropertySet
+                    app:applyMotionScene="false"
+                    app:visibilityMode="ignore" />
+        </Constraint>
+
         <Constraint android:id="@+id/view_layout_controls">
             <PropertySet
                     app:applyMotionScene="false"
