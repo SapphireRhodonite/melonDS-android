@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.VideoRenderer
@@ -38,6 +39,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_RENDERER_SUFFIX) -> handleSetRenderer(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_IR_SUFFIX) -> handleSetInternalResolution(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_JIT_SUFFIX) -> handleSetJit(entryPoint, intent)
+            context.debugCommandAction(ACTION_SET_VULKAN_FALLBACKS_SUFFIX) -> handleSetVulkanFallbacks(intent)
             context.debugCommandAction(ACTION_LOAD_STATE_SUFFIX) -> handleLoadState(context, entryPoint, intent)
             context.debugCommandAction(ACTION_DUMP_RENDERER_CAPTURE_SUFFIX) -> handleDumpRendererCapture(context, entryPoint, intent)
             else -> Log.w(TAG, "Ignored unknown action=${intent.action}")
@@ -74,6 +76,24 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         }
         val refreshed = DebugCommandStateStore.requestSettingsRefresh()
         Log.w(TAG, "action=set_jit enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}")
+    }
+
+    private fun handleSetVulkanFallbacks(intent: Intent) {
+        val forceTimelineOff = intent.firstBooleanExtra(EXTRA_TIMELINE_OFF)
+            ?: intent.firstBooleanExtra(EXTRA_TIMELINE)?.not()
+            ?: false
+        val forceDynamicIndexingOff = intent.firstBooleanExtra(EXTRA_DYNAMIC_INDEXING_OFF)
+            ?: intent.firstBooleanExtra(EXTRA_DYNAMIC_INDEXING)?.not()
+            ?: false
+        MelonDSAndroidInterface.setVulkanCompatibilityOverrides(
+            disableTimelineSemaphores = forceTimelineOff,
+            disableDynamicTextureIndexing = forceDynamicIndexingOff,
+        )
+        val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        Log.w(
+            TAG,
+            "action=set_vulkan_fallbacks timelineOff=${if (forceTimelineOff) 1 else 0} dynamicIndexingOff=${if (forceDynamicIndexingOff) 1 else 0} refreshed=${if (refreshed) 1 else 0}",
+        )
     }
 
     private suspend fun handleLoadState(
@@ -239,6 +259,10 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val EXTRA_SCALE = "scale"
         private const val EXTRA_IR = "ir"
         private const val EXTRA_ENABLED = "enabled"
+        private const val EXTRA_TIMELINE = "timeline"
+        private const val EXTRA_TIMELINE_OFF = "timeline_off"
+        private const val EXTRA_DYNAMIC_INDEXING = "dynamic_indexing"
+        private const val EXTRA_DYNAMIC_INDEXING_OFF = "dynamic_indexing_off"
         private const val EXTRA_SLOT = "slot"
         private const val EXTRA_PATH = "path"
         private const val EXTRA_URI = "uri"
@@ -253,6 +277,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_RENDERER_SUFFIX = "SET_RENDERER"
         private const val ACTION_SET_IR_SUFFIX = "SET_IR"
         private const val ACTION_SET_JIT_SUFFIX = "SET_JIT"
+        private const val ACTION_SET_VULKAN_FALLBACKS_SUFFIX = "SET_VULKAN_FALLBACKS"
         private const val ACTION_LOAD_STATE_SUFFIX = "LOAD_STATE"
         private const val ACTION_DUMP_RENDERER_CAPTURE_SUFFIX = "DUMP_RENDERER_CAPTURE"
     }

@@ -179,6 +179,12 @@ generate_header \
   "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_TriRasterShaderData.h"
 
 generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_TriRasterBaseShader.comp" \
+  "comp" \
+  "melonDS_gpu3d_vulkan_tri_raster_base_comp_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_TriRasterBaseShaderData.h"
+
+generate_header \
   "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_TriRasterCompatShader.comp" \
   "comp" \
   "melonDS_gpu3d_vulkan_tri_raster_compat_comp_spv" \

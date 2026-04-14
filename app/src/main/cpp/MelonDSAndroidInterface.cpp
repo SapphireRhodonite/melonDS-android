@@ -1,5 +1,6 @@
 #include <vector>
 #include <cstring>
+#include <atomic>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
 #include "JniEnvHandler.h"
@@ -10,6 +11,7 @@
 #include "Platform.h"
 #include "renderer/FrameQueue.h"
 #include "renderer/VulkanOutput.h"
+#include "VulkanContext.h"
 #include "retroachievements/RetroAchievementsManager.h"
 
 JniEnvHandler* jniEnvHandler;
@@ -36,6 +38,8 @@ constexpr const char* kTimelineSemaphoreExtension = VK_KHR_TIMELINE_SEMAPHORE_EX
 constexpr const char* kDescriptorIndexingExtension = VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME;
 constexpr const char* kOptionalExternalMemoryExtension = VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME;
 constexpr const char* kOptionalAndroidHardwareBufferExtension = VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME;
+std::atomic<bool> gForceDisableTimelineSemaphores{false};
+std::atomic<bool> gForceDisableDynamicTextureIndexing{false};
 
 bool hasExtension(const char* extensionName, const std::vector<VkExtensionProperties>& extensions)
 {
@@ -136,18 +140,18 @@ bool hasRequiredDeviceExtensions(VkInstance instance, VkPhysicalDevice physicalD
         }
     }
 
-    if (!apiAtLeast12)
+    const bool forceDisableTimelineSemaphores = gForceDisableTimelineSemaphores.load(std::memory_order_relaxed);
+    const bool forceDisableDynamicTextureIndexing = gForceDisableDynamicTextureIndexing.load(std::memory_order_relaxed);
+
+    const bool timelineExtensionAvailable = apiAtLeast12 || hasExtension(kTimelineSemaphoreExtension, extensions);
+    if (!timelineExtensionAvailable && !forceDisableTimelineSemaphores)
     {
-        if (!hasExtension(kTimelineSemaphoreExtension, extensions))
-        {
-            melonDS::Platform::Log(
-                melonDS::Platform::LogLevel::Warn,
-                "MelonDSAndroidInterface: device '%s' missing extension %s",
-                properties.deviceName,
-                kTimelineSemaphoreExtension
-            );
-            return false;
-        }
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "MelonDSAndroidInterface: device '%s' missing extension %s; timeline fallback will use fences",
+            properties.deviceName,
+            kTimelineSemaphoreExtension
+        );
     }
 
     const bool hasExternalMemoryExtension = hasExtension(kOptionalExternalMemoryExtension, extensions);
@@ -203,23 +207,33 @@ bool hasRequiredDeviceExtensions(VkInstance instance, VkPhysicalDevice physicalD
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
-            "MelonDSAndroidInterface: device '%s' missing feature timelineSemaphore",
+            "MelonDSAndroidInterface: device '%s' missing feature timelineSemaphore; timeline fallback will use fences",
             properties.deviceName
         );
-        return false;
     }
 
-    if (features2.features.shaderSampledImageArrayDynamicIndexing != VK_TRUE)
+    const bool dynamicTextureIndexingAvailable =
+        !forceDisableDynamicTextureIndexing
+        && features2.features.shaderSampledImageArrayDynamicIndexing == VK_TRUE;
+    if (!dynamicTextureIndexingAvailable)
     {
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Warn,
-            "MelonDSAndroidInterface: device '%s' missing feature shaderSampledImageArrayDynamicIndexing",
-            properties.deviceName
-        );
-        return false;
+        if (forceDisableDynamicTextureIndexing) {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "MelonDSAndroidInterface: forcing dynamic-indexing fallback on '%s'",
+                properties.deviceName
+            );
+        } else {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "MelonDSAndroidInterface: device '%s' missing feature shaderSampledImageArrayDynamicIndexing; single-descriptor texture fallback will be used",
+                properties.deviceName
+            );
+        }
     }
 
-    if (descriptorFeatures.shaderSampledImageArrayNonUniformIndexing != VK_TRUE)
+    if (dynamicTextureIndexingAvailable
+        && descriptorFeatures.shaderSampledImageArrayNonUniformIndexing != VK_TRUE)
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
@@ -227,7 +241,9 @@ bool hasRequiredDeviceExtensions(VkInstance instance, VkPhysicalDevice physicalD
             properties.deviceName
         );
     }
-    else if (!apiAtLeast12 && !hasExtension(kDescriptorIndexingExtension, extensions))
+    else if (dynamicTextureIndexingAvailable
+        && !apiAtLeast12
+        && !hasExtension(kDescriptorIndexingExtension, extensions))
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
@@ -387,6 +403,19 @@ bool canInitializeVulkanRenderer()
 
     return true;
 }
+
+void setVulkanCompatibilityOverrides(bool disableTimelineSemaphores, bool disableDynamicTextureIndexing)
+{
+    gForceDisableTimelineSemaphores.store(disableTimelineSemaphores, std::memory_order_relaxed);
+    gForceDisableDynamicTextureIndexing.store(disableDynamicTextureIndexing, std::memory_order_relaxed);
+    melonDS::VulkanContext::SetCompatibilityOverrides(disableTimelineSemaphores, disableDynamicTextureIndexing);
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Warn,
+        "MelonDSAndroidInterface: Vulkan compatibility overrides updated (timelineOff=%d dynamicIndexingOff=%d)",
+        disableTimelineSemaphores ? 1 : 0,
+        disableDynamicTextureIndexing ? 1 : 0
+    );
+}
 }
 
 extern "C"
@@ -425,6 +454,19 @@ JNIEXPORT jboolean JNICALL
 Java_me_magnum_melonds_MelonDSAndroidInterface_canInitializeVulkanRendererNative(JNIEnv* env, jobject thiz)
 {
     return canInitializeVulkanRenderer() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonDSAndroidInterface_setVulkanCompatibilityOverridesNative(
+    JNIEnv* env,
+    jobject thiz,
+    jboolean disableTimelineSemaphores,
+    jboolean disableDynamicTextureIndexing)
+{
+    setVulkanCompatibilityOverrides(
+        disableTimelineSemaphores == JNI_TRUE,
+        disableDynamicTextureIndexing == JNI_TRUE
+    );
 }
 
 JNIEXPORT void JNICALL

@@ -11,6 +11,7 @@
                 <action android:name="${applicationId}.SET_RENDERER" />
                 <action android:name="${applicationId}.SET_IR" />
                 <action android:name="${applicationId}.SET_JIT" />
+                <action android:name="${applicationId}.SET_VULKAN_FALLBACKS" />
                 <action android:name="${applicationId}.LOAD_STATE" />
                 <action android:name="${applicationId}.DUMP_RENDERER_CAPTURE" />
             </intent-filter>
