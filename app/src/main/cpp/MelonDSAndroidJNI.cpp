@@ -981,6 +981,22 @@ Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentPac
     return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentPackedBottomPrimaryForDebug());
 }
 
+JNIEXPORT jboolean JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_isCurrentFrameReadyForDebug(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    return MelonDSAndroid::isCurrentFrameReadyForDebug() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getCurrentFrameIndexForDebug(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    return static_cast<jint>(MelonDSAndroid::getCurrentFrameIndexForDebug());
+}
+
 JNIEXPORT jintArray JNICALL
 Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrent3dDimensions(JNIEnv* env, jobject thiz)
 {

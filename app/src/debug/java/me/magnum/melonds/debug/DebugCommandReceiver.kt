@@ -17,6 +17,7 @@ import me.magnum.melonds.domain.model.ControllerConfiguration
 import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureLogger
+import me.magnum.melonds.impl.emulator.debug.RendererDebugBridge
 import java.io.File
 import java.util.Locale
 
@@ -44,6 +45,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_SLOT2_ANALOG_SUFFIX) -> handleSetSlot2Analog(intent)
             context.debugCommandAction(ACTION_SET_SLOT2_ANALOG_MAPPING_SUFFIX) -> handleSetSlot2AnalogMapping(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_VULKAN_FALLBACKS_SUFFIX) -> handleSetVulkanFallbacks(intent)
+            context.debugCommandAction(ACTION_SAVE_STATE_SUFFIX) -> handleSaveState(context, entryPoint, intent)
             context.debugCommandAction(ACTION_LOAD_STATE_SUFFIX) -> handleLoadState(context, entryPoint, intent)
             context.debugCommandAction(ACTION_DUMP_RENDERER_CAPTURE_SUFFIX) -> handleDumpRendererCapture(context, entryPoint, intent)
             else -> Log.w(TAG, "Ignored unknown action=${intent.action}")
@@ -176,6 +178,31 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         )
     }
 
+    private suspend fun handleSaveState(
+        context: Context,
+        entryPoint: DebugCommandEntryPoint,
+        intent: Intent,
+    ) {
+        val stateUri = resolveStateUri(context, entryPoint, intent)
+            ?: throw IllegalArgumentException("Missing save target. Provide slot or path.")
+        val pauseAfterSave = intent.getBooleanExtra(EXTRA_PAUSE_AFTER, false)
+        MelonEmulator.pauseEmulation()
+        val success = try {
+            MelonEmulator.saveState(stateUri)
+        } finally {
+            if (pauseAfterSave) {
+                DebugCommandStateStore.setDebugPauseHeld(true)
+            } else {
+                DebugCommandStateStore.setDebugPauseHeld(false)
+                MelonEmulator.resumeEmulation()
+            }
+        }
+        Log.w(
+            TAG,
+            "action=save_state uri=$stateUri success=${if (success) 1 else 0} pauseAfter=${if (pauseAfterSave) 1 else 0}",
+        )
+    }
+
     private suspend fun handleDumpRendererCapture(
         context: Context,
         entryPoint: DebugCommandEntryPoint,
@@ -193,12 +220,19 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         val outputDir = File(context.cacheDir, "renderer-debug-captures")
         val pauseWasHeld = DebugCommandStateStore.isDebugPauseHeld()
         val resumeMs = intent.firstNullableIntExtra(EXTRA_RESUME_MS, EXTRA_DURATION_MS)?.coerceAtLeast(0) ?: 0
+        val resumeFrames = intent.firstNullableIntExtra(EXTRA_RESUME_FRAMES, EXTRA_FRAMES)?.coerceAtLeast(0) ?: 0
         if (!pauseWasHeld) {
             MelonEmulator.pauseEmulation()
-        } else if (resumeMs > 0) {
+        } else if (resumeMs > 0 || resumeFrames > 0) {
             DebugCommandStateStore.setDebugPauseHeld(false)
+            val startFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
             MelonEmulator.resumeEmulation()
-            delay(resumeMs.toLong())
+            waitForRendererFrameOrTimeout(
+                renderer = renderer,
+                startFrame = startFrame,
+                resumeFrames = resumeFrames,
+                timeoutMs = resumeMs.toLong(),
+            )
             MelonEmulator.pauseEmulation()
         }
         val result = try {
@@ -212,7 +246,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         }
         Log.w(
             TAG,
-            "action=dump_renderer_capture renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} resumeMs=$resumeMs captureId=${result.captureId} success=${if (result.success) 1 else 0} outputDir=${result.outputDir?.absolutePath ?: "none"}",
+            "action=dump_renderer_capture renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} resumeMs=$resumeMs resumeFrames=$resumeFrames captureId=${result.captureId} success=${if (result.success) 1 else 0} outputDir=${result.outputDir?.absolutePath ?: "none"}",
         )
     }
 
@@ -244,6 +278,39 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
             "opengl", "gl" -> VideoRenderer.OPENGL
             "vulkan", "vk" -> VideoRenderer.VULKAN
             else -> null
+        }
+    }
+
+    private suspend fun waitForRendererFrameOrTimeout(
+        renderer: VideoRenderer,
+        startFrame: Int,
+        resumeFrames: Int,
+        timeoutMs: Long,
+    ) {
+        val effectiveTimeoutMs = when {
+            timeoutMs > 0L -> timeoutMs
+            resumeFrames > 0 -> 5_000L
+            else -> 0L
+        }
+
+        if (effectiveTimeoutMs <= 0L) {
+            return
+        }
+
+        val targetFrame = if (resumeFrames > 0 && startFrame >= 0) {
+            startFrame + resumeFrames
+        } else {
+            Int.MIN_VALUE
+        }
+        val deadlineAt = System.nanoTime() + effectiveTimeoutMs * 1_000_000L
+        while (System.nanoTime() < deadlineAt) {
+            val currentFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            val hasReachedTargetFrame = targetFrame == Int.MIN_VALUE || currentFrame >= targetFrame
+            val rendererReady = renderer != VideoRenderer.VULKAN || RendererDebugBridge.isCurrentFrameReadyForDebug()
+            if (hasReachedTargetFrame && rendererReady) {
+                return
+            }
+            delay(8L)
         }
     }
 
@@ -354,7 +421,9 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val EXTRA_ROM_URI = "rom_uri"
         private const val EXTRA_PAUSE_AFTER = "pause_after"
         private const val EXTRA_RESUME_MS = "resume_ms"
+        private const val EXTRA_RESUME_FRAMES = "resume_frames"
         private const val EXTRA_DURATION_MS = "duration_ms"
+        private const val EXTRA_FRAMES = "frames"
         private const val EXTRA_VALUE = "value"
 
         private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -366,6 +435,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_SLOT2_ANALOG_SUFFIX = "SET_SLOT2_ANALOG"
         private const val ACTION_SET_SLOT2_ANALOG_MAPPING_SUFFIX = "SET_SLOT2_ANALOG_MAPPING"
         private const val ACTION_SET_VULKAN_FALLBACKS_SUFFIX = "SET_VULKAN_FALLBACKS"
+        private const val ACTION_SAVE_STATE_SUFFIX = "SAVE_STATE"
         private const val ACTION_LOAD_STATE_SUFFIX = "LOAD_STATE"
         private const val ACTION_DUMP_RENDERER_CAPTURE_SUFFIX = "DUMP_RENDERER_CAPTURE"
     }

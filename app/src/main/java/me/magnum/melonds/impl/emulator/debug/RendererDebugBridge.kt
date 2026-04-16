@@ -10,6 +10,8 @@ internal object RendererDebugBridge {
     external fun captureCurrentFrame(): IntArray?
     external fun captureCurrentPackedTopPrimary(): IntArray?
     external fun captureCurrentPackedBottomPrimary(): IntArray?
+    external fun isCurrentFrameReadyForDebug(): Boolean
+    external fun getCurrentFrameIndexForDebug(): Int
     external fun captureCurrent3dDimensions(): IntArray?
     external fun captureCurrent3dFrame(): IntArray?
     external fun captureCurrent3dCaptureFrame(): IntArray?

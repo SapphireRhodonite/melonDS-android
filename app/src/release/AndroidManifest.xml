@@ -4,17 +4,12 @@
 
     <application>
         <receiver
-            android:name=".debug.DebugCommandReceiver"
+            android:name=".debug.ReleaseStateCommandReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
-                <action android:name="${applicationId}.SET_RENDERER" />
-                <action android:name="${applicationId}.SET_IR" />
-                <action android:name="${applicationId}.SET_JIT" />
-                <action android:name="${applicationId}.SET_VULKAN_FALLBACKS" />
                 <action android:name="${applicationId}.SAVE_STATE" />
                 <action android:name="${applicationId}.LOAD_STATE" />
-                <action android:name="${applicationId}.DUMP_RENDERER_CAPTURE" />
             </intent-filter>
         </receiver>
 
