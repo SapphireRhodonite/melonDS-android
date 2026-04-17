@@ -38,9 +38,11 @@ import me.magnum.melonds.ui.layouteditor.LayoutEditorActivity.MenuOption
 import me.magnum.melonds.ui.layouteditor.LayoutEditorManagerView.AspectRatioEnforcementPriority.HEIGHT
 import me.magnum.melonds.ui.layouteditor.LayoutEditorManagerView.AspectRatioEnforcementPriority.WIDTH
 import me.magnum.melonds.ui.layouteditor.model.LayoutComponentEditableProperty
+import me.magnum.melonds.ui.layouteditor.model.LayoutComponentPositionEditorState
 import me.magnum.melonds.ui.layouteditor.model.LayoutTarget
 import me.magnum.melonds.ui.layouteditor.model.ScreenEditorState
 import me.magnum.melonds.ui.layouteditor.ui.LayoutBackgroundDialog
+import me.magnum.melonds.ui.layouteditor.ui.LayoutComponentPositionDialog
 import me.magnum.melonds.ui.layouteditor.ui.LayoutComponentPropertyValueDialog
 import me.magnum.melonds.ui.layouteditor.ui.LayoutPropertiesDialog
 import me.magnum.melonds.ui.theme.MelonTheme
@@ -63,6 +65,7 @@ class LayoutEditorManagerView(
         fun openBackgroundPicker(layoutTarget: LayoutTarget, selectedBackgroundId: UUID?)
         fun onStoreLayoutChanges()
         fun onSaveLayoutAndExit()
+        fun onSaveLayoutAsNewAndExit()
         fun onExit()
     }
 
@@ -98,6 +101,7 @@ class LayoutEditorManagerView(
     private var showLayoutPropertiesDialog by mutableStateOf(initialEditorState?.isPropertiesDialogShown ?: false)
     private var showBackgroundPropertiesDialog by mutableStateOf(initialEditorState?.isBackgroundPropertiesDialogShown ?: false)
     private var shownEditablePropertyDialog by mutableStateOf<LayoutComponentEditableProperty?>(null)
+    private var shownPositionDialog by mutableStateOf<LayoutComponentPositionEditorState?>(null)
     private val nameInputDialogState = TextInputDialogState()
 
     val layoutEditorView get() = binding.viewLayoutEditor
@@ -180,6 +184,15 @@ class LayoutEditorManagerView(
                         onCancel = { shownEditablePropertyDialog = null },
                     )
 
+                    LayoutComponentPositionDialog(
+                        positionEditorState = shownPositionDialog,
+                        onDismiss = { shownPositionDialog = null },
+                        onSave = { x, y ->
+                            binding.viewLayoutEditor.setSelectedViewPosition(x, y)
+                            shownPositionDialog = null
+                        }
+                    )
+
                     TextInputDialog(
                         title = stringResource(R.string.layout_name),
                         dialogState = nameInputDialogState,
@@ -238,6 +251,9 @@ class LayoutEditorManagerView(
         }
         binding.viewLayoutEditor.setOnViewDeselectedListener {
             hideScalingControls()
+        }
+        binding.viewLayoutEditor.setOnViewPositionEditRequestedListener {
+            shownPositionDialog = it
         }
         binding.layoutSizeLabels.setOnClickListener {
             shownEditablePropertyDialog = LayoutComponentEditableProperty.SIZE
@@ -408,7 +424,7 @@ class LayoutEditorManagerView(
 
     private fun openMenu() {
         listener?.onStoreLayoutChanges()
-        val values = MenuOption.entries
+        val values = getMenuOptions()
         val options = Array(values.size) { i -> resources.getString(values[i].stringRes) }
 
         val themedContext = android.view.ContextThemeWrapper(context, R.style.AppTheme)
@@ -425,11 +441,25 @@ class LayoutEditorManagerView(
             MenuOption.BACKGROUNDS -> openBackgroundsConfigDialog()
             MenuOption.REVERT -> viewModel.revertLayoutChanges()
             MenuOption.RESET -> viewModel.resetLayout()
+            MenuOption.SAVE_AS_NEW -> showLayoutNameInputDialog(
+                initialName = viewModel.getCurrentLayoutName()?.ifBlank { resources.getString(R.string.custom_layout_default_name) }
+                    ?: resources.getString(R.string.custom_layout_default_name),
+                onConfirm = {
+                    viewModel.setCurrentLayoutName(it)
+                    listener?.onSaveLayoutAsNewAndExit()
+                },
+            )
             MenuOption.SAVE_AND_EXIT -> {
                 if (viewModel.currentLayoutHasName()) {
                     listener?.onSaveLayoutAndExit()
                 } else {
-                    showLayoutNameInputDialog()
+                    showLayoutNameInputDialog(
+                        initialName = resources.getString(R.string.custom_layout_default_name),
+                        onConfirm = {
+                            viewModel.setCurrentLayoutName(it)
+                            listener?.onSaveLayoutAndExit()
+                        },
+                    )
                 }
             }
             MenuOption.EXIT_WITHOUT_SAVING -> listener?.onExit()
@@ -446,13 +476,24 @@ class LayoutEditorManagerView(
         showBackgroundPropertiesDialog = true
     }
 
-    private fun showLayoutNameInputDialog() {
+    private fun getMenuOptions(): List<MenuOption> {
+        return buildList {
+            add(MenuOption.PROPERTIES)
+            add(MenuOption.BACKGROUNDS)
+            add(MenuOption.REVERT)
+            add(MenuOption.RESET)
+            if (viewModel.canSaveLayoutAsNew()) {
+                add(MenuOption.SAVE_AS_NEW)
+            }
+            add(MenuOption.SAVE_AND_EXIT)
+            add(MenuOption.EXIT_WITHOUT_SAVING)
+        }
+    }
+
+    private fun showLayoutNameInputDialog(initialName: String, onConfirm: (String) -> Unit) {
         nameInputDialogState.show(
-            initialText = resources.getString(R.string.custom_layout_default_name),
-            onConfirm = {
-                viewModel.setCurrentLayoutName(it)
-                listener?.onSaveLayoutAndExit()
-            },
+            initialText = initialName,
+            onConfirm = onConfirm,
         )
     }
 

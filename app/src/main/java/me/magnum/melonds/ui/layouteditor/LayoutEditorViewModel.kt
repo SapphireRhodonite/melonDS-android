@@ -39,6 +39,7 @@ class LayoutEditorViewModel @Inject constructor(
     private val uiLayoutProvider: UILayoutProvider,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val editingLayoutId = savedStateHandle.get<String?>(LayoutEditorActivity.KEY_LAYOUT_ID)?.let { UUID.fromString(it) }
 
     private var initialLayoutConfiguration: LayoutConfiguration? = null
     private var currentLayoutVariant: UILayoutVariant? = null
@@ -77,7 +78,7 @@ class LayoutEditorViewModel @Inject constructor(
 
     init {
         val isExternal = savedStateHandle.get<Boolean>(LayoutEditorActivity.KEY_IS_EXTERNAL) ?: false
-        val layoutId = savedStateHandle.get<String?>(LayoutEditorActivity.KEY_LAYOUT_ID)?.let { UUID.fromString(it) }
+        val layoutId = editingLayoutId
         if (layoutId != null) {
             viewModelScope.launch {
                 val initialLayout = layoutsRepository.getLayout(layoutId)
@@ -185,6 +186,19 @@ class LayoutEditorViewModel @Inject constructor(
         _currentLayoutConfiguration.value?.let {
             viewModelScope.launch {
                 layoutsRepository.saveLayout(it)
+            }
+        }
+    }
+
+    fun saveCurrentLayoutAsNew() {
+        _currentLayoutConfiguration.value?.let { currentLayoutConfiguration ->
+            viewModelScope.launch {
+                layoutsRepository.saveLayout(
+                    currentLayoutConfiguration.copy(
+                        id = null,
+                        type = LayoutConfiguration.LayoutType.CUSTOM,
+                    )
+                )
             }
         }
     }
@@ -346,5 +360,13 @@ class LayoutEditorViewModel @Inject constructor(
 
     fun currentLayoutHasName(): Boolean {
         return !_currentLayoutConfiguration.value?.name.isNullOrEmpty()
+    }
+
+    fun canSaveLayoutAsNew(): Boolean {
+        return editingLayoutId != null && _currentLayoutConfiguration.value != null
+    }
+
+    fun getCurrentLayoutName(): String? {
+        return _currentLayoutConfiguration.value?.name
     }
 }

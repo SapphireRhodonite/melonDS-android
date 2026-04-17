@@ -493,6 +493,7 @@
     <string name="properties">Properties</string>
     <string name="revert_changes">Revert changes</string>
     <string name="reset_default">Reset to default</string>
+    <string name="save_as_new">Save as new</string>
     <string name="exit_without_saving">Exit without saving</string>
     <string name="save_and_exit">Save and exit</string>
     <string name="layout_name">Layout name</string>
@@ -500,6 +501,8 @@
     <string name="layout_use_default_opacity">Use default opacity</string>
     <string name="layout_opacity">Layout opacity</string>
     <string name="layout_background_load_failed">Failed to load the background</string>
+    <string name="layout_component_position_title">%1$s position</string>
+    <string name="layout_position_allowed_range">Allowed range: %1$d to %2$d</string>
 
     <string name="layout_background_title">Layout Background</string>
     <string name="background">Background</string>

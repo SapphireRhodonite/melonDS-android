@@ -53,6 +53,7 @@ class LayoutEditorActivity : AppCompatActivity() {
         BACKGROUNDS(R.string.background),
         REVERT(R.string.revert_changes),
         RESET(R.string.reset_default),
+        SAVE_AS_NEW(R.string.save_as_new),
         SAVE_AND_EXIT(R.string.save_and_exit),
         EXIT_WITHOUT_SAVING(R.string.exit_without_saving)
     }
@@ -118,6 +119,10 @@ class LayoutEditorActivity : AppCompatActivity() {
 
         override fun onSaveLayoutAndExit() {
             saveLayoutAndExit()
+        }
+
+        override fun onSaveLayoutAsNewAndExit() {
+            saveLayoutAsNewAndExit()
         }
 
         override fun onExit() {
@@ -318,6 +323,12 @@ class LayoutEditorActivity : AppCompatActivity() {
     private fun saveLayoutAndExit() {
         storeLayoutChanges()
         viewModel.saveCurrentLayout()
+        finish()
+    }
+
+    private fun saveLayoutAsNewAndExit() {
+        storeLayoutChanges()
+        viewModel.saveCurrentLayoutAsNew()
         finish()
     }
 

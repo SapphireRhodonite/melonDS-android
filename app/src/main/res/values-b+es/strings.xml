@@ -308,6 +308,7 @@
     <string name="properties">Propiedades</string>
     <string name="revert_changes">Revertir cambios</string>
     <string name="reset_default">Restablecer los valores predeterminados</string>
+    <string name="save_as_new">Guardar como nuevo</string>
     <string name="exit_without_saving">Salir sin guardar</string>
     <string name="save_and_exit">Guardar y salir</string>
     <string name="layout_name">Nombre de diseño</string>
@@ -315,6 +316,8 @@
     <string name="layout_use_default_opacity">Usar opacidad predeterminada</string>
     <string name="layout_opacity">Opacidad de diseño</string>
     <string name="layout_background_load_failed">Error al cargar el fondo</string>
+    <string name="layout_component_position_title">Posición de %1$s</string>
+    <string name="layout_position_allowed_range">Rango permitido: %1$d a %2$d</string>
 
     <string name="backgrounds">Fondos</string>
     <string name="action_backgrounds_new">Nuevo fondo</string>

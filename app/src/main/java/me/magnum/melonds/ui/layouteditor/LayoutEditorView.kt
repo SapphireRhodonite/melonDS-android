@@ -2,6 +2,7 @@ package me.magnum.melonds.ui.layouteditor
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -11,6 +12,7 @@ import me.magnum.melonds.domain.model.layout.PositionedLayoutComponent
 import me.magnum.melonds.domain.model.layout.UILayout
 import me.magnum.melonds.ui.common.LayoutComponentView
 import me.magnum.melonds.ui.common.LayoutView
+import me.magnum.melonds.ui.layouteditor.model.LayoutComponentPositionEditorState
 import me.magnum.melonds.ui.layouteditor.model.LayoutTarget
 import me.magnum.melonds.impl.dpToPixels
 import kotlin.math.*
@@ -41,6 +43,7 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
     private var selectedViewAnchor = Anchor.TOP_LEFT
     private var modifiedByUser = false
     private var onLayoutChangedListener: ((List<PositionedLayoutComponent>, Int, Int) -> Unit)? = null
+    private var onViewPositionEditRequestedListener: ((LayoutComponentPositionEditorState) -> Unit)? = null
 
     init {
         super.setOnClickListener {
@@ -80,6 +83,10 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
 
     fun setOnLayoutChangedListener(listener: ((List<PositionedLayoutComponent>, Int, Int) -> Unit)?) {
         onLayoutChangedListener = listener
+    }
+
+    fun setOnViewPositionEditRequestedListener(listener: ((LayoutComponentPositionEditorState) -> Unit)?) {
+        onViewPositionEditRequestedListener = listener
     }
 
     fun addLayoutComponent(component: LayoutComponent) {
@@ -127,6 +134,24 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
     }
 
     private fun setupDragHandler(layoutComponentView: LayoutComponentView) {
+        val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                return true
+            }
+
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                selectView(layoutComponentView)
+                layoutComponentView.view.performClick()
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                selectView(layoutComponentView)
+                onViewPositionEditRequestedListener?.invoke(buildPositionEditorState(layoutComponentView))
+                layoutComponentView.view.performClick()
+                return true
+            }
+        })
         layoutComponentView.view.setOnTouchListener(object : OnTouchListener {
             private var dragging = false
 
@@ -134,19 +159,19 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
             private var downOffsetY = -1f
 
             override fun onTouch(view: View?, motionEvent: MotionEvent?): Boolean {
-                if (view == null)
+                if (view == null || motionEvent == null)
                     return false
 
-                if (selectedView != null) {
-                    deselectCurrentView()
-                }
-
-                return when (motionEvent?.action) {
+                return when (motionEvent.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        if (selectedView != null) {
+                            deselectCurrentView()
+                        }
                         downOffsetX = motionEvent.x
                         downOffsetY = motionEvent.y
                         view.alpha = 1f
                         layoutComponentView.setHighlighted(true)
+                        gestureDetector.onTouchEvent(motionEvent)
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -158,16 +183,31 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
                         } else {
                             dragView(layoutComponentView, motionEvent.x - downOffsetX, motionEvent.y - downOffsetY)
                         }
+                        gestureDetector.onTouchEvent(motionEvent)
                         true
                     }
-                    MotionEvent.ACTION_CANCEL,
-                    MotionEvent.ACTION_UP -> {
-                        if (!dragging) {
-                            selectView(layoutComponentView)
-                        } else {
+                    MotionEvent.ACTION_CANCEL -> {
+                        gestureDetector.onTouchEvent(motionEvent)
+                        if (dragging) {
                             view.alpha = 0.5f
                             layoutComponentView.setHighlighted(false)
                             dragging = false
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val gestureHandled = if (!dragging) {
+                            gestureDetector.onTouchEvent(motionEvent)
+                        } else {
+                            false
+                        }
+                        if (dragging) {
+                            view.alpha = 0.5f
+                            layoutComponentView.setHighlighted(false)
+                            dragging = false
+                        } else if (!gestureHandled) {
+                            selectView(layoutComponentView)
+                            view.performClick()
                         }
                         true
                     }
@@ -175,6 +215,17 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
                 }
             }
         })
+    }
+
+    private fun buildPositionEditorState(view: LayoutComponentView): LayoutComponentPositionEditorState {
+        val position = view.getPosition()
+        return LayoutComponentPositionEditorState(
+            component = view.component,
+            x = position.x,
+            y = position.y,
+            maxX = max(width - view.getWidth(), 0),
+            maxY = max(height - view.getHeight(), 0),
+        )
     }
 
     private fun selectView(view: LayoutComponentView) {
@@ -243,6 +294,15 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
             modifiedByUser = true
             notifyLayoutChanged()
         }
+    }
+
+    fun setSelectedViewPosition(x: Int, y: Int) {
+        val currentlySelectedView = selectedView ?: return
+        val boundedX = x.coerceIn(0, max(width - currentlySelectedView.getWidth(), 0))
+        val boundedY = y.coerceIn(0, max(height - currentlySelectedView.getHeight(), 0))
+        currentlySelectedView.setPosition(Point(boundedX, boundedY))
+        modifiedByUser = true
+        notifyLayoutChanged()
     }
 
     private fun rearrangeScreens() {
