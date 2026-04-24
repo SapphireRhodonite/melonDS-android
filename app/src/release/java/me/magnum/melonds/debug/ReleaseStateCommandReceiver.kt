@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.domain.model.SaveStateSlot
+import me.magnum.melonds.domain.model.VideoRenderer
 import java.io.File
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -22,7 +23,9 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         receiverScope.launch {
             try {
-                handleIntent(context.applicationContext, intent)
+                DebugCommandExecutionLock.withLock {
+                    handleIntent(context.applicationContext, intent)
+                }
             } catch (error: Exception) {
                 Log.w(TAG, "Release state command failed: action=${intent.action}", error)
             } finally {
@@ -44,12 +47,29 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         }
 
         when (intent.action) {
+            context.debugCommandAction(ACTION_SET_RENDERER_SUFFIX) -> handleSetRenderer(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_IR_SUFFIX) -> handleSetInternalResolution(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_FAST_FORWARD_SUFFIX) -> handleSetFastForward(intent)
+            context.debugCommandAction(ACTION_SET_VULKAN_SIMPLE_PIPELINE_SUFFIX) -> handleSetVulkanSimplePipeline(entryPoint, intent)
             context.debugCommandAction(ACTION_SAVE_STATE_SUFFIX) -> handleSaveState(context, entryPoint, intent)
             context.debugCommandAction(ACTION_LOAD_STATE_SUFFIX) -> handleLoadState(context, entryPoint, intent)
             else -> Log.w(TAG, "Ignored unknown action=${intent.action}")
         }
+    }
+
+    private fun handleSetRenderer(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+        val rendererName = intent.firstStringExtra(EXTRA_RENDERER, EXTRA_VALUE)
+            ?: throw IllegalArgumentException("Missing renderer extra")
+        val renderer = parseRenderer(rendererName)
+            ?: throw IllegalArgumentException("Unsupported renderer=$rendererName")
+        entryPoint.sharedPreferences().edit(commit = true) {
+            putString(KEY_VIDEO_RENDERER, renderer.name.lowercase(Locale.US))
+        }
+        val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        Log.w(
+            TAG,
+            "action=set_renderer mode=release renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0}",
+        )
     }
 
     private fun handleSetInternalResolution(entryPoint: DebugCommandEntryPoint, intent: Intent) {
@@ -68,6 +88,19 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             ?: throw IllegalArgumentException("Missing enabled extra")
         MelonEmulator.setFastForwardEnabled(enabled)
         Log.w(TAG, "action=set_fast_forward mode=release enabled=${if (enabled) 1 else 0}")
+    }
+
+    private fun handleSetVulkanSimplePipeline(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+        val enabled = intent.firstBooleanExtra(EXTRA_ENABLED, EXTRA_VALUE)
+            ?: throw IllegalArgumentException("Missing enabled extra")
+        entryPoint.sharedPreferences().edit(commit = true) {
+            putBoolean(KEY_VIDEO_VULKAN_SIMPLE_PIPELINE_ENABLED, enabled)
+        }
+        val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        Log.w(
+            TAG,
+            "action=set_vulkan_simple_pipeline mode=release enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}",
+        )
     }
 
     private suspend fun handleLoadState(
@@ -221,6 +254,15 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         return names.toList()
     }
 
+    private fun parseRenderer(value: String): VideoRenderer? {
+        return when (value.trim().lowercase(Locale.US)) {
+            "software", "soft" -> VideoRenderer.SOFTWARE
+            "opengl", "gl" -> VideoRenderer.OPENGL
+            "vulkan", "vk" -> VideoRenderer.VULKAN
+            else -> null
+        }
+    }
+
     private fun readBooleanSystemProperty(key: String): Boolean {
         return try {
             val process = ProcessBuilder(GETPROP_BINARY, key)
@@ -293,10 +335,13 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
     private companion object {
         private const val TAG = "DebugCommand"
         private const val KEY_RENDERER_DEBUG_TOOLS_ENABLED = "video_renderer_debug_tools_enabled"
+        private const val KEY_VIDEO_RENDERER = "video_renderer"
         private const val KEY_VIDEO_INTERNAL_RESOLUTION = "video_internal_resolution"
+        private const val KEY_VIDEO_VULKAN_SIMPLE_PIPELINE_ENABLED = "video_vulkan_simple_pipeline_enabled"
         private const val RELEASE_STATE_COMMANDS_PROPERTY = "debug.melonds.release_state_commands"
         private const val GETPROP_BINARY = "/system/bin/getprop"
 
+        private const val EXTRA_RENDERER = "renderer"
         private const val EXTRA_SCALE = "scale"
         private const val EXTRA_IR = "ir"
         private const val EXTRA_ENABLED = "enabled"
@@ -312,8 +357,10 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
 
         private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        private const val ACTION_SET_RENDERER_SUFFIX = "SET_RENDERER"
         private const val ACTION_SET_IR_SUFFIX = "SET_IR"
         private const val ACTION_SET_FAST_FORWARD_SUFFIX = "SET_FAST_FORWARD"
+        private const val ACTION_SET_VULKAN_SIMPLE_PIPELINE_SUFFIX = "SET_VULKAN_SIMPLE_PIPELINE"
         private const val ACTION_SAVE_STATE_SUFFIX = "SAVE_STATE"
         private const val ACTION_LOAD_STATE_SUFFIX = "LOAD_STATE"
     }

@@ -107,6 +107,7 @@ class SharedPreferencesSettingsRepository(
         val filtering: VideoFiltering,
         val threadedRenderingEnabled: Boolean,
         val resolutionScaling: Int,
+        val vulkanSimplePipelineEnabled: Boolean,
         val rendererDebugToolsEnabled: Boolean,
         val rendererDebugBgObjEnabled: Boolean,
     )
@@ -134,17 +135,25 @@ class SharedPreferencesSettingsRepository(
                 getVideoFiltering(),
                 isThreadedRenderingEnabled(),
                 getVideoInternalResolutionScaling(),
-                isRendererDebugToolsEnabled(),
-            ) { renderer, filtering, threadedRenderingEnabled, resolutionScaling, rendererDebugToolsEnabled ->
+                isVulkanSimplePipelineEnabled(),
+            ) { renderer, filtering, threadedRenderingEnabled, resolutionScaling, vulkanSimplePipelineEnabled ->
                 CoreRenderConfigurationInputs(
                     renderer,
                     filtering,
                     threadedRenderingEnabled,
                     resolutionScaling,
-                    rendererDebugToolsEnabled,
+                    vulkanSimplePipelineEnabled,
+                    rendererDebugToolsEnabled = false,
                     rendererDebugBgObjEnabled = false,
                 )
             },
+            isRendererDebugToolsEnabled(),
+        ) { coreInputs, rendererDebugToolsEnabled ->
+            coreInputs.copy(rendererDebugToolsEnabled = rendererDebugToolsEnabled)
+        }
+
+        val fullCoreRenderInputsFlow = combine(
+            coreRenderInputsFlow,
             isRendererDebugBgObjEnabled(),
         ) { coreInputs, rendererDebugBgObjEnabled ->
             coreInputs.copy(rendererDebugBgObjEnabled = rendererDebugBgObjEnabled)
@@ -172,7 +181,7 @@ class SharedPreferencesSettingsRepository(
             inputs.copy(debugClearMagenta = debugClearMagenta)
         }
 
-        val renderInputsFlow = combine(coreRenderInputsFlow, coverageFixInputsFlow) { core, coverageFix ->
+        val renderInputsFlow = combine(fullCoreRenderInputsFlow, coverageFixInputsFlow) { core, coverageFix ->
             RenderConfigurationInputs(core, coverageFix)
         }
 
@@ -192,6 +201,7 @@ class SharedPreferencesSettingsRepository(
                 effectiveFiltering,
                 effectiveThreadedRendering,
                 renderInputs.core.resolutionScaling,
+                renderInputs.core.vulkanSimplePipelineEnabled,
                 renderInputs.core.rendererDebugToolsEnabled,
                 renderInputs.core.rendererDebugBgObjEnabled,
                 renderInputs.coverageFix.enabled,
@@ -394,6 +404,12 @@ class SharedPreferencesSettingsRepository(
     override fun getVideoRenderer(): Flow<VideoRenderer> {
         return getOrCreatePreferenceSharedFlow("video_renderer") {
             getCurrentVideoRenderer()
+        }
+    }
+
+    override fun isVulkanSimplePipelineEnabled(): Flow<Boolean> {
+        return getOrCreatePreferenceSharedFlow("video_vulkan_simple_pipeline_enabled") {
+            preferences.getBoolean("video_vulkan_simple_pipeline_enabled", true)
         }
     }
 

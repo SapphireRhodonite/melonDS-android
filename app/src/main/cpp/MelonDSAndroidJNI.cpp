@@ -981,13 +981,73 @@ Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentPac
     return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentPackedBottomPrimaryForDebug());
 }
 
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentPackedPlane(
+    JNIEnv* env,
+    jobject thiz,
+    jint screenIndex,
+    jint planeIndex)
+{
+    (void)thiz;
+    return MakeJavaIntArray(
+        env,
+        MelonDSAndroid::captureCurrentPackedPlaneForDebug(
+            static_cast<int>(screenIndex),
+            static_cast<int>(planeIndex)));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentCapture3dSource(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentCapture3dSourceForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentCaptureLineUses3dMask(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentCaptureLineUses3dMaskForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentComp4TopPlaceholder(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentComp4TopPlaceholderForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentComp4BottomPlaceholder(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentComp4BottomPlaceholderForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentCaptureFallbackMask(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::captureCurrentCaptureFallbackMaskForDebug());
+}
+
+JNIEXPORT jstring JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_captureCurrentSoftPackedFrameMetaJson(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    const std::string json = MelonDSAndroid::captureCurrentSoftPackedFrameMetaJsonForDebug();
+    if (json.empty())
+        return nullptr;
+
+    return env->NewStringUTF(json.c_str());
+}
+
 JNIEXPORT jboolean JNICALL
 Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_isCurrentFrameReadyForDebug(JNIEnv* env, jobject thiz)
 {
     (void)env;
     (void)thiz;
-    // Compatibility fallback when the core does not expose per-frame readiness probes.
-    return JNI_TRUE;
+    return MelonDSAndroid::isCurrentFrameReadyForDebug() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
@@ -995,7 +1055,95 @@ Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getCurrentFrameIn
 {
     (void)env;
     (void)thiz;
-    return static_cast<jint>(-1);
+    return static_cast<jint>(MelonDSAndroid::getCurrentFrameIndexForDebug());
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_clearPreparedRendererSnapshot(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    MelonDSAndroid::clearPreparedRendererDebugSnapshot();
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_startDenseScreenBurstCapture(
+    JNIEnv* env,
+    jobject thiz,
+    jint frameCount,
+    jint stepFrames,
+    jint captureKindsMask)
+{
+    (void)env;
+    (void)thiz;
+    MelonDSAndroid::startDenseScreenBurstCaptureForDebug(
+        static_cast<int>(frameCount),
+        static_cast<int>(stepFrames),
+        static_cast<melonDS::u32>(captureKindsMask));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_isDenseScreenBurstCaptureComplete(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    return MelonDSAndroid::isDenseScreenBurstCaptureCompleteForDebug() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getDenseScreenBurstCaptureFrameCount(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    return static_cast<jint>(MelonDSAndroid::getDenseScreenBurstCaptureFrameCountForDebug());
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getDenseScreenBurstCaptureFrame(
+    JNIEnv* env,
+    jobject thiz,
+    jint index)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::getDenseScreenBurstCaptureFrameForDebug(static_cast<int>(index)));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getDenseScreenBurstPackedTopFrame(
+    JNIEnv* env,
+    jobject thiz,
+    jint index)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::getDenseScreenBurstPackedTopFrameForDebug(static_cast<int>(index)));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getDenseScreenBurstPackedBottomFrame(
+    JNIEnv* env,
+    jobject thiz,
+    jint index)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::getDenseScreenBurstPackedBottomFrameForDebug(static_cast<int>(index)));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getDenseScreenBurstRenderer3dCaptureFrame(
+    JNIEnv* env,
+    jobject thiz,
+    jint index)
+{
+    (void)thiz;
+    return MakeJavaIntArray(env, MelonDSAndroid::getDenseScreenBurstRenderer3dCaptureFrameForDebug(static_cast<int>(index)));
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_clearDenseScreenBurstCapture(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    MelonDSAndroid::clearDenseScreenBurstCaptureForDebug();
 }
 
 JNIEXPORT jintArray JNICALL

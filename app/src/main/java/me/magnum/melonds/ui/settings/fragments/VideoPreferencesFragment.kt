@@ -47,6 +47,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
 
     private val threadedRendererPreferences = mutableListOf<Preference>()
     private val highResRendererPreferences = mutableListOf<Preference>()
+    private val vulkanRendererPreferences = mutableListOf<Preference>()
     private val rendererDebugPreferences = mutableListOf<Preference>()
     private val coverageFixPreferences = mutableListOf<Preference>()
 
@@ -63,6 +64,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             add(findPreference("video_internal_resolution")!!)
             add(findPreference("video_hacks_category")!!)
             add(findPreference("video_debug_3d_clear_magenta")!!)
+        }
+
+        vulkanRendererPreferences.apply {
+            add(findPreference("video_vulkan_simple_pipeline_enabled")!!)
         }
 
         rendererDebugPreferences.apply {
@@ -187,6 +192,9 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                 rendererDebugPreferences.forEach {
                     it.isVisible = true
                 }
+                vulkanRendererPreferences.forEach {
+                    it.isVisible = false
+                }
             }
             VideoRenderer.OPENGL -> {
                 threadedRendererPreferences.forEach {
@@ -201,6 +209,9 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                 rendererDebugPreferences.forEach {
                     it.isVisible = true
                 }
+                vulkanRendererPreferences.forEach {
+                    it.isVisible = false
+                }
             }
             VideoRenderer.VULKAN -> {
                 threadedRendererPreferences.forEach {
@@ -213,6 +224,9 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     it.isVisible = true
                 }
                 rendererDebugPreferences.forEach {
+                    it.isVisible = true
+                }
+                vulkanRendererPreferences.forEach {
                     it.isVisible = true
                 }
             }

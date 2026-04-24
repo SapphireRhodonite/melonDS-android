@@ -6,12 +6,32 @@ import androidx.annotation.Keep
 internal object RendererDebugBridge {
     const val CAPTURE_WIDTH = 256
     const val CAPTURE_HEIGHT = 384
+    const val DENSE_CAPTURE_SCREEN_FRAME = 1 shl 0
+    const val DENSE_CAPTURE_PACKED_TOP_PRIMARY = 1 shl 1
+    const val DENSE_CAPTURE_PACKED_BOTTOM_PRIMARY = 1 shl 2
+    const val DENSE_CAPTURE_RENDERER3D_CAPTURE_FRAME = 1 shl 3
 
     external fun captureCurrentFrame(): IntArray?
     external fun captureCurrentPackedTopPrimary(): IntArray?
     external fun captureCurrentPackedBottomPrimary(): IntArray?
+    external fun captureCurrentPackedPlane(screenIndex: Int, planeIndex: Int): IntArray?
+    external fun captureCurrentCapture3dSource(): IntArray?
+    external fun captureCurrentCaptureLineUses3dMask(): IntArray?
+    external fun captureCurrentComp4TopPlaceholder(): IntArray?
+    external fun captureCurrentComp4BottomPlaceholder(): IntArray?
+    external fun captureCurrentCaptureFallbackMask(): IntArray?
+    external fun captureCurrentSoftPackedFrameMetaJson(): String?
     external fun isCurrentFrameReadyForDebug(): Boolean
     external fun getCurrentFrameIndexForDebug(): Int
+    external fun clearPreparedRendererSnapshot()
+    external fun startDenseScreenBurstCapture(frameCount: Int, stepFrames: Int, captureKindsMask: Int)
+    external fun isDenseScreenBurstCaptureComplete(): Boolean
+    external fun getDenseScreenBurstCaptureFrameCount(): Int
+    external fun getDenseScreenBurstCaptureFrame(index: Int): IntArray?
+    external fun getDenseScreenBurstPackedTopFrame(index: Int): IntArray?
+    external fun getDenseScreenBurstPackedBottomFrame(index: Int): IntArray?
+    external fun getDenseScreenBurstRenderer3dCaptureFrame(index: Int): IntArray?
+    external fun clearDenseScreenBurstCapture()
     external fun captureCurrent3dDimensions(): IntArray?
     external fun captureCurrent3dFrame(): IntArray?
     external fun captureCurrent3dCaptureFrame(): IntArray?

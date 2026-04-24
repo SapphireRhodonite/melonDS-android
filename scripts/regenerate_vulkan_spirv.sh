@@ -209,6 +209,48 @@ generate_header \
   "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_CaptureLineExportShaderData.h"
 
 generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsRasterShader.vert" \
+  "vert" \
+  "melonDS_gpu3d_vulkan_graphics_raster_vert_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsRasterShader.frag" \
+  "frag" \
+  "melonDS_gpu3d_vulkan_graphics_raster_frag_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsNoColorShader.frag" \
+  "frag" \
+  "melonDS_gpu3d_vulkan_graphics_no_color_frag_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsNoColorShaderData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsClearShader.frag" \
+  "frag" \
+  "melonDS_gpu3d_vulkan_graphics_clear_frag_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsClearShaderData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsFinalShader.vert" \
+  "vert" \
+  "melonDS_gpu3d_vulkan_graphics_final_vert_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsFinalShaderVertexData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsEdgeShader.frag" \
+  "frag" \
+  "melonDS_gpu3d_vulkan_graphics_edge_frag_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsEdgeShaderData.h"
+
+generate_header \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsFogShader.frag" \
+  "frag" \
+  "melonDS_gpu3d_vulkan_graphics_fog_frag_spv" \
+  "$ROOT_DIR/melonDS-android-lib/src/GPU3D_Vulkan_GraphicsFogShaderData.h"
+
+generate_header \
   "$ROOT_DIR/melonDS-android-lib/src/android/renderer/VulkanCompositorShader.comp" \
   "comp" \
   "melonDS_android_vulkan_compositor_comp_spv" \

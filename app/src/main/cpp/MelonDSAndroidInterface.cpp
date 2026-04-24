@@ -416,6 +416,7 @@ void setVulkanCompatibilityOverrides(bool disableTimelineSemaphores, bool disabl
         disableDynamicTextureIndexing ? 1 : 0
     );
 }
+
 }
 
 extern "C"

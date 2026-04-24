@@ -85,6 +85,13 @@
             app:iconSpaceReserved="false">
 
         <SwitchPreference
+                android:key="video_vulkan_simple_pipeline_enabled"
+                android:title="@string/video_vulkan_simple_pipeline_enabled"
+                android:summary="@string/video_vulkan_simple_pipeline_enabled_summary"
+                app:iconSpaceReserved="false"
+                android:defaultValue="true" />
+
+        <SwitchPreference
                 android:key="video_renderer_debug_tools_enabled"
                 android:title="@string/video_renderer_debug_tools_enabled"
                 android:summary="@string/video_renderer_debug_tools_enabled_summary"

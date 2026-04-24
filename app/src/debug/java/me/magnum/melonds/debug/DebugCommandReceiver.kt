@@ -16,8 +16,11 @@ import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.domain.model.ControllerConfiguration
 import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureKind
+import me.magnum.melonds.impl.emulator.debug.RendererDebugCapturePresets
 import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureLogger
 import me.magnum.melonds.impl.emulator.debug.RendererDebugBridge
+import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureResult
 import java.io.File
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -27,7 +30,9 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         receiverScope.launch {
             try {
-                handleIntent(context.applicationContext, intent)
+                DebugCommandExecutionLock.withLock {
+                    handleIntent(context.applicationContext, intent)
+                }
             } catch (error: Exception) {
                 Log.w(TAG, "Debug command failed: action=${intent.action}", error)
             } finally {
@@ -43,6 +48,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_IR_SUFFIX) -> handleSetInternalResolution(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_JIT_SUFFIX) -> handleSetJit(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_BGOBJ_LOG_SUFFIX) -> handleSetBgObjLog(entryPoint, intent)
+            context.debugCommandAction(ACTION_SET_VULKAN_SIMPLE_PIPELINE_SUFFIX) -> handleSetVulkanSimplePipeline(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_FAST_FORWARD_SUFFIX) -> handleSetFastForward(intent)
             context.debugCommandAction(ACTION_SET_SLOT2_ANALOG_SUFFIX) -> handleSetSlot2Analog(intent)
             context.debugCommandAction(ACTION_SET_SLOT2_ANALOG_MAPPING_SUFFIX) -> handleSetSlot2AnalogMapping(entryPoint, intent)
@@ -94,6 +100,16 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         }
         val refreshed = DebugCommandStateStore.requestSettingsRefresh()
         Log.w(TAG, "action=set_bgobj_log enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}")
+    }
+
+    private fun handleSetVulkanSimplePipeline(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+        val enabled = intent.firstBooleanExtra(EXTRA_ENABLED, EXTRA_VALUE)
+            ?: throw IllegalArgumentException("Missing enabled extra")
+        entryPoint.sharedPreferences().edit(commit = true) {
+            putBoolean(KEY_VIDEO_VULKAN_SIMPLE_PIPELINE_ENABLED, enabled)
+        }
+        val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        Log.w(TAG, "action=set_vulkan_simple_pipeline enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}")
     }
 
     private fun handleSetFastForward(intent: Intent) {
@@ -230,6 +246,111 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         val pauseWasHeld = DebugCommandStateStore.isDebugPauseHeld()
         val resumeMs = intent.firstNullableIntExtra(EXTRA_RESUME_MS, EXTRA_DURATION_MS)?.coerceAtLeast(0) ?: 0
         val resumeFrames = intent.firstNullableIntExtra(EXTRA_RESUME_FRAMES, EXTRA_FRAMES)?.coerceAtLeast(0) ?: 0
+        val burstCount = intent.firstNullableIntExtra(EXTRA_BURST_COUNT, EXTRA_CAPTURE_COUNT)?.coerceAtLeast(1) ?: 1
+        val burstStepMs = intent.firstNullableIntExtra(EXTRA_BURST_STEP_MS, EXTRA_STEP_MS)?.coerceAtLeast(0)
+            ?: if (burstCount > 1) 0 else resumeMs
+        val burstStepFrames = intent.firstNullableIntExtra(EXTRA_BURST_STEP_FRAMES, EXTRA_STEP_FRAMES)?.coerceAtLeast(0)
+            ?: if (burstCount > 1) 1 else resumeFrames
+        val burstLive = intent.firstBooleanExtra(EXTRA_BURST_LIVE, EXTRA_LIVE_BURST) ?: false
+        val captureIdBase = intent.firstStringExtra(EXTRA_CAPTURE_ID_BASE, EXTRA_CAPTURE_ID)
+            ?.takeIf { it.isNotBlank() }
+        val captureKinds = parseCaptureKinds(
+            rawKinds = intent.firstStringExtra(EXTRA_CAPTURE_KINDS, EXTRA_KINDS),
+            defaultKinds = if (burstCount > 1) {
+                setOf(RendererDebugCaptureKind.SCREEN_FRAME)
+            } else {
+                RendererDebugCaptureKind.allKinds
+            },
+        )
+        val captureKindsFirst = parseCaptureKinds(
+            rawKinds = intent.firstStringExtra(EXTRA_CAPTURE_KINDS_FIRST, EXTRA_FIRST_KINDS),
+            defaultKinds = captureKinds,
+        )
+        val captureKindsRest = parseCaptureKinds(
+            rawKinds = intent.firstStringExtra(EXTRA_CAPTURE_KINDS_REST, EXTRA_REST_KINDS),
+            defaultKinds = captureKinds,
+        )
+        val captureOutputDir = if (burstCount > 1) {
+            File(outputDir, "burst_${System.currentTimeMillis()}").apply { mkdirs() }
+        } else {
+            outputDir
+        }
+        val results = try {
+            if (burstLive) {
+                performLiveBurstCapture(
+                    renderer = renderer,
+                    pauseWasHeld = pauseWasHeld,
+                    resumeMs = resumeMs,
+                    resumeFrames = resumeFrames,
+                    burstCount = burstCount,
+                    burstStepMs = burstStepMs,
+                burstStepFrames = burstStepFrames,
+                captureOutputDir = captureOutputDir,
+                captureIdBase = captureIdBase,
+                captureKindsFirst = captureKindsFirst,
+                captureKindsRest = captureKindsRest,
+            )
+        } else {
+                performPausedBurstCapture(
+                    renderer = renderer,
+                    pauseWasHeld = pauseWasHeld,
+                    resumeMs = resumeMs,
+                    resumeFrames = resumeFrames,
+                    burstCount = burstCount,
+                    burstStepMs = burstStepMs,
+                burstStepFrames = burstStepFrames,
+                captureOutputDir = captureOutputDir,
+                captureIdBase = captureIdBase,
+                captureKindsFirst = captureKindsFirst,
+                captureKindsRest = captureKindsRest,
+            )
+            }
+        } finally {
+            if (pauseWasHeld) {
+                DebugCommandStateStore.setDebugPauseHeld(true)
+                MelonEmulator.pauseEmulation()
+            } else {
+                DebugCommandStateStore.setDebugPauseHeld(false)
+                MelonEmulator.resumeEmulation()
+            }
+        }
+        if (results.size > 1) {
+            File(captureOutputDir, "burst_manifest.txt").writeText(
+                buildString {
+                    appendLine("renderer=${renderer.name.lowercase(Locale.US)}")
+                    appendLine("captures=${results.size}")
+                    appendLine("liveBurst=${if (burstLive) 1 else 0}")
+                    appendLine("stepFrames=$burstStepFrames")
+                    appendLine("stepMs=$burstStepMs")
+                    appendLine("captureKindsFirst=${captureKindsFirst.joinToString(separator = ",") { it.name.lowercase(Locale.US) }}")
+                    appendLine("captureKindsRest=${captureKindsRest.joinToString(separator = ",") { it.name.lowercase(Locale.US) }}")
+                    results.forEachIndexed { index, result ->
+                        appendLine("capture[$index]=${result.captureId} success=${if (result.success) 1 else 0}")
+                    }
+                },
+            )
+        }
+        val successCount = results.count { it.success }
+        val firstCaptureId = results.firstOrNull()?.captureId ?: "none"
+        Log.w(
+            TAG,
+            "action=dump_renderer_capture renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} liveBurst=${if (burstLive) 1 else 0} resumeMs=$resumeMs resumeFrames=$resumeFrames burstCount=$burstCount burstStepMs=$burstStepMs burstStepFrames=$burstStepFrames captureKindsFirst=${captureKindsFirst.joinToString(separator = ",") { it.name.lowercase(Locale.US) }} captureKindsRest=${captureKindsRest.joinToString(separator = ",") { it.name.lowercase(Locale.US) }} captureId=$firstCaptureId success=$successCount/${results.size} outputDir=${captureOutputDir.absolutePath}",
+        )
+    }
+
+    private suspend fun performPausedBurstCapture(
+        renderer: VideoRenderer,
+        pauseWasHeld: Boolean,
+        resumeMs: Int,
+        resumeFrames: Int,
+        burstCount: Int,
+        burstStepMs: Int,
+        burstStepFrames: Int,
+        captureOutputDir: File,
+        captureIdBase: String?,
+        captureKindsFirst: Set<RendererDebugCaptureKind>,
+        captureKindsRest: Set<RendererDebugCaptureKind>,
+    ): List<RendererDebugCaptureResult> {
         if (!pauseWasHeld) {
             MelonEmulator.pauseEmulation()
         } else if (resumeMs > 0 || resumeFrames > 0) {
@@ -244,19 +365,144 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
             )
             MelonEmulator.pauseEmulation()
         }
-        val result = try {
-            RendererDebugCaptureLogger.dumpPauseMenuCapture(
-                configuredRenderer = renderer,
-                outputDir = outputDir,
-            )
-        } finally {
+
+        val captureBaseId = captureIdBase ?: java.lang.Long.toHexString(System.currentTimeMillis())
+        return buildList<RendererDebugCaptureResult> {
+            repeat(burstCount) { index ->
+                val captureIdOverride = if (burstCount > 1) {
+                    "${captureBaseId}_frame_${index.toString().padStart(4, '0')}"
+                } else {
+                    captureBaseId.takeIf { captureIdBase != null }
+                }
+                add(
+                    RendererDebugCaptureLogger.dumpPauseMenuCapture(
+                        configuredRenderer = renderer,
+                        outputDir = captureOutputDir,
+                        captureIdOverride = captureIdOverride,
+                        captureKinds = if (index == 0) captureKindsFirst else captureKindsRest,
+                        freezeRendererSnapshot = true,
+                    ),
+                )
+                if (index + 1 < burstCount) {
+                    DebugCommandStateStore.setDebugPauseHeld(false)
+                    val startFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+                    MelonEmulator.resumeEmulation()
+                    waitForRendererFrameOrTimeout(
+                        renderer = renderer,
+                        startFrame = startFrame,
+                        resumeFrames = burstStepFrames,
+                        timeoutMs = burstStepMs.toLong(),
+                    )
+                    MelonEmulator.pauseEmulation()
+                }
+            }
+        }
+    }
+
+    private suspend fun performLiveBurstCapture(
+        renderer: VideoRenderer,
+        pauseWasHeld: Boolean,
+        resumeMs: Int,
+        resumeFrames: Int,
+        burstCount: Int,
+        burstStepMs: Int,
+        burstStepFrames: Int,
+        captureOutputDir: File,
+        captureIdBase: String?,
+        captureKindsFirst: Set<RendererDebugCaptureKind>,
+        captureKindsRest: Set<RendererDebugCaptureKind>,
+    ): List<RendererDebugCaptureResult> {
+        if (
+            captureKindsFirst == captureKindsRest
+            && !requiresPausedBurstCapture(captureKindsFirst)
+            && !requiresPausedBurstCapture(captureKindsRest)
+        ) {
             DebugCommandStateStore.setDebugPauseHeld(false)
             MelonEmulator.resumeEmulation()
+            val captureBaseId = captureIdBase ?: java.lang.Long.toHexString(System.currentTimeMillis())
+            val timeoutMs = when {
+                burstStepMs > 0 -> burstStepMs.toLong() * burstCount.toLong() + 5_000L
+                else -> (burstCount.toLong() * maxOf(burstStepFrames, 1).toLong() * 1_000L) / 24L + 5_000L
+            }
+            return RendererDebugCaptureLogger.dumpDenseScreenBurstCapture(
+                configuredRenderer = renderer,
+                outputDir = captureOutputDir,
+                captureIdBase = captureBaseId,
+                burstCount = burstCount,
+                burstStepFrames = burstStepFrames,
+                timeoutMs = timeoutMs,
+                captureKinds = captureKindsFirst,
+            )
         }
-        Log.w(
-            TAG,
-            "action=dump_renderer_capture renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} resumeMs=$resumeMs resumeFrames=$resumeFrames captureId=${result.captureId} success=${if (result.success) 1 else 0} outputDir=${result.outputDir?.absolutePath ?: "none"}",
-        )
+
+        DebugCommandStateStore.setDebugPauseHeld(false)
+        MelonEmulator.resumeEmulation()
+
+        val initialStepFrames = if (resumeFrames > 0) resumeFrames else 0
+        val initialStepMs = if (resumeMs > 0) resumeMs else 0
+        if (initialStepFrames > 0 || initialStepMs > 0) {
+            val startFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            waitForRendererFrameOrTimeout(
+                renderer = renderer,
+                startFrame = startFrame,
+                resumeFrames = initialStepFrames,
+                timeoutMs = initialStepMs.toLong(),
+            )
+        }
+
+        val captureBaseId = captureIdBase ?: java.lang.Long.toHexString(System.currentTimeMillis())
+        return buildList<RendererDebugCaptureResult> {
+            var lastObservedFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            if (burstCount > 0 && requiresPausedBurstCapture(captureKindsFirst)) {
+                MelonEmulator.pauseEmulation()
+                add(
+                    RendererDebugCaptureLogger.dumpPauseMenuCapture(
+                        configuredRenderer = renderer,
+                        outputDir = captureOutputDir,
+                        captureIdOverride = if (burstCount > 1) {
+                            "${captureBaseId}_frame_${"0000"}"
+                        } else {
+                            captureBaseId.takeIf { captureIdBase != null }
+                        },
+                        captureKinds = captureKindsFirst,
+                        freezeRendererSnapshot = true,
+                    ),
+                )
+                DebugCommandStateStore.setDebugPauseHeld(false)
+                MelonEmulator.resumeEmulation()
+                lastObservedFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            }
+
+            val startIndex = if (burstCount > 0 && requiresPausedBurstCapture(captureKindsFirst)) 1 else 0
+            for (index in startIndex until burstCount) {
+                if (index > 0 || startIndex > 0) {
+                    waitForRendererAdvanceOrTimeout(
+                        renderer = renderer,
+                        lastObservedFrame = lastObservedFrame,
+                        advanceFrames = burstStepFrames,
+                        timeoutMs = burstStepMs.toLong(),
+                    )
+                }
+                val captureIdOverride = if (burstCount > 1) {
+                    "${captureBaseId}_frame_${index.toString().padStart(4, '0')}"
+                } else {
+                    captureBaseId.takeIf { captureIdBase != null }
+                }
+                add(
+                    RendererDebugCaptureLogger.dumpPauseMenuCapture(
+                        configuredRenderer = renderer,
+                        outputDir = captureOutputDir,
+                        captureIdOverride = captureIdOverride,
+                        captureKinds = if (index == 0) captureKindsFirst else captureKindsRest,
+                        freezeRendererSnapshot = shouldFreezeRendererSnapshot(
+                            renderer = renderer,
+                            captureKinds = if (index == 0) captureKindsFirst else captureKindsRest,
+                        ),
+                    ),
+                )
+                lastObservedFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            }
+        }
     }
 
     private suspend fun resolveStateUri(
@@ -366,6 +612,58 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         }
     }
 
+    private fun parseCaptureKinds(
+        rawKinds: String?,
+        defaultKinds: Set<RendererDebugCaptureKind>,
+    ): Set<RendererDebugCaptureKind> {
+        val value = rawKinds?.trim().orEmpty()
+        if (value.isEmpty()) {
+            return defaultKinds
+        }
+
+        val parsed = LinkedHashSet<RendererDebugCaptureKind>()
+        value.split(',')
+            .map { it.trim().lowercase(Locale.US) }
+            .filter { it.isNotEmpty() }
+            .forEach { token ->
+                when (token) {
+                    "all" -> parsed.addAll(RendererDebugCaptureKind.allKinds)
+                    "vulkanexact", "vulkan_exact", "vulkan-exact", "exactframe", "exact_frame", "exact-frame" ->
+                        parsed.addAll(RendererDebugCapturePresets.vulkanExactFrame)
+                    "screen", "screenframe" -> parsed.add(RendererDebugCaptureKind.SCREEN_FRAME)
+                    "packed" -> {
+                        parsed.add(RendererDebugCaptureKind.PACKED_TOP_PRIMARY)
+                        parsed.add(RendererDebugCaptureKind.PACKED_BOTTOM_PRIMARY)
+                    }
+                    "packedtop", "packed_top", "packedtopprimary" -> parsed.add(RendererDebugCaptureKind.PACKED_TOP_PRIMARY)
+                    "packedbottom", "packed_bottom", "packedbottomprimary" -> parsed.add(RendererDebugCaptureKind.PACKED_BOTTOM_PRIMARY)
+                    "packedtopplane1", "packed_top_plane1" -> parsed.add(RendererDebugCaptureKind.PACKED_TOP_PLANE1)
+                    "packedtopcontrol", "packed_top_control" -> parsed.add(RendererDebugCaptureKind.PACKED_TOP_CONTROL)
+                    "packedbottomplane1", "packed_bottom_plane1" -> parsed.add(RendererDebugCaptureKind.PACKED_BOTTOM_PLANE1)
+                    "packedbottomcontrol", "packed_bottom_control" -> parsed.add(RendererDebugCaptureKind.PACKED_BOTTOM_CONTROL)
+                    "capture3dsource", "capture3dsource", "capture3dsourceds", "capture3dsourceframe" ->
+                        parsed.add(RendererDebugCaptureKind.CAPTURE3D_SOURCE_DS_FRAME)
+                    "capturelinemask", "capturelineuses3dmask", "capture_line_uses_3d_mask" ->
+                        parsed.add(RendererDebugCaptureKind.CAPTURE_LINE_USES_3D_MASK)
+                    "comp4top", "comp4_top", "comp4topplaceholder", "comp4_top_placeholder" ->
+                        parsed.add(RendererDebugCaptureKind.COMP4_TOP_PLACEHOLDER)
+                    "comp4bottom", "comp4_bottom", "comp4bottomplaceholder", "comp4_bottom_placeholder" ->
+                        parsed.add(RendererDebugCaptureKind.COMP4_BOTTOM_PLACEHOLDER)
+                    "capturefallback", "capturefallbackmask", "capture_fallback_mask", "fallbackmask" ->
+                        parsed.add(RendererDebugCaptureKind.CAPTURE_FALLBACK_MASK)
+                    "softpackedmeta", "softpackedframemeta", "soft_packed_frame_meta", "softpackedframejson" ->
+                        parsed.add(RendererDebugCaptureKind.SOFT_PACKED_FRAME_META_JSON)
+                    "renderer3d", "3d", "renderer3dframe" -> parsed.add(RendererDebugCaptureKind.RENDERER3D_FRAME)
+                    "capture3d", "3dcapture", "renderer3dcapture", "renderer3dcaptureframe" -> parsed.add(RendererDebugCaptureKind.RENDERER3D_CAPTURE_FRAME)
+                    "depth", "renderer3ddepth" -> parsed.add(RendererDebugCaptureKind.RENDERER3D_DEPTH)
+                    "attr", "attributes", "renderer3dattr" -> parsed.add(RendererDebugCaptureKind.RENDERER3D_ATTR)
+                    "coverage", "renderer3dcoverage" -> parsed.add(RendererDebugCaptureKind.RENDERER3D_COVERAGE)
+                    else -> throw IllegalArgumentException("Unsupported capture kind=$token")
+                }
+            }
+        return if (parsed.isEmpty()) defaultKinds else parsed
+    }
+
     private suspend fun waitForRendererFrameOrTimeout(
         renderer: VideoRenderer,
         startFrame: Int,
@@ -387,16 +685,81 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         } else {
             Int.MIN_VALUE
         }
+        if (targetFrame == Int.MIN_VALUE) {
+            delay(effectiveTimeoutMs)
+            return
+        }
         val deadlineAt = System.nanoTime() + effectiveTimeoutMs * 1_000_000L
         while (System.nanoTime() < deadlineAt) {
             val currentFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
-            val hasReachedTargetFrame = targetFrame == Int.MIN_VALUE || currentFrame >= targetFrame
+            val hasReachedTargetFrame = currentFrame >= targetFrame
             val rendererReady = renderer != VideoRenderer.VULKAN || RendererDebugBridge.isCurrentFrameReadyForDebug()
             if (hasReachedTargetFrame && rendererReady) {
                 return
             }
             delay(8L)
         }
+    }
+
+    private suspend fun waitForRendererAdvanceOrTimeout(
+        renderer: VideoRenderer,
+        lastObservedFrame: Int,
+        advanceFrames: Int,
+        timeoutMs: Long,
+    ) {
+        val effectiveTimeoutMs = when {
+            timeoutMs > 0L -> timeoutMs
+            advanceFrames > 0 -> 5_000L
+            else -> 0L
+        }
+
+        if (effectiveTimeoutMs <= 0L) {
+            return
+        }
+
+        val currentFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+        val targetAdvance = if (advanceFrames > 0) advanceFrames else 1
+        val referenceFrame = maxOf(lastObservedFrame, currentFrame)
+        val targetFrame = if (referenceFrame >= 0) {
+            referenceFrame + targetAdvance
+        } else {
+            Int.MIN_VALUE
+        }
+
+        if (targetFrame == Int.MIN_VALUE) {
+            delay(effectiveTimeoutMs)
+            return
+        }
+
+        val deadlineAt = System.nanoTime() + effectiveTimeoutMs * 1_000_000L
+        while (System.nanoTime() < deadlineAt) {
+            val nextFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
+            val hasReachedTargetFrame = nextFrame >= targetFrame
+            val rendererReady = renderer != VideoRenderer.VULKAN || RendererDebugBridge.isCurrentFrameReadyForDebug()
+            if (hasReachedTargetFrame && rendererReady) {
+                return
+            }
+            delay(8L)
+        }
+    }
+
+    private fun requiresPausedBurstCapture(captureKinds: Set<RendererDebugCaptureKind>): Boolean {
+        return captureKinds.any {
+            it != RendererDebugCaptureKind.SCREEN_FRAME
+                && it != RendererDebugCaptureKind.PACKED_TOP_PRIMARY
+                && it != RendererDebugCaptureKind.PACKED_BOTTOM_PRIMARY
+                && it != RendererDebugCaptureKind.RENDERER3D_CAPTURE_FRAME
+        }
+    }
+
+    private fun shouldFreezeRendererSnapshot(
+        renderer: VideoRenderer,
+        captureKinds: Set<RendererDebugCaptureKind>,
+    ): Boolean {
+        if (renderer != VideoRenderer.VULKAN) {
+            return true
+        }
+        return captureKinds.any { it != RendererDebugCaptureKind.SCREEN_FRAME }
     }
 
     private fun parseUri(pathOrUri: String): Uri {
@@ -478,6 +841,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val KEY_VIDEO_RENDERER = "video_renderer"
         private const val KEY_VIDEO_INTERNAL_RESOLUTION = "video_internal_resolution"
         private const val KEY_ENABLE_JIT = "enable_jit"
+        private const val KEY_VIDEO_VULKAN_SIMPLE_PIPELINE_ENABLED = "video_vulkan_simple_pipeline_enabled"
         private const val KEY_RENDERER_DEBUG_TOOLS_ENABLED = "video_renderer_debug_tools_enabled"
         private const val KEY_RENDERER_DEBUG_BGOBJ_ENABLED = "video_renderer_debug_bgobj_enabled"
 
@@ -509,6 +873,22 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val EXTRA_RESUME_FRAMES = "resume_frames"
         private const val EXTRA_DURATION_MS = "duration_ms"
         private const val EXTRA_FRAMES = "frames"
+        private const val EXTRA_BURST_COUNT = "burst_count"
+        private const val EXTRA_CAPTURE_COUNT = "capture_count"
+        private const val EXTRA_BURST_STEP_MS = "burst_step_ms"
+        private const val EXTRA_STEP_MS = "step_ms"
+        private const val EXTRA_BURST_STEP_FRAMES = "burst_step_frames"
+        private const val EXTRA_STEP_FRAMES = "step_frames"
+        private const val EXTRA_BURST_LIVE = "burst_live"
+        private const val EXTRA_LIVE_BURST = "live_burst"
+        private const val EXTRA_CAPTURE_KINDS = "capture_kinds"
+        private const val EXTRA_KINDS = "kinds"
+        private const val EXTRA_CAPTURE_ID_BASE = "capture_id_base"
+        private const val EXTRA_CAPTURE_ID = "capture_id"
+        private const val EXTRA_CAPTURE_KINDS_FIRST = "capture_kinds_first"
+        private const val EXTRA_FIRST_KINDS = "first_kinds"
+        private const val EXTRA_CAPTURE_KINDS_REST = "capture_kinds_rest"
+        private const val EXTRA_REST_KINDS = "rest_kinds"
         private const val EXTRA_VALUE = "value"
         private const val ROM_URI_RESOLVE_TIMEOUT_MS = 4_000L
         private const val ROM_URI_RESOLVE_STEP_MS = 100L
@@ -519,6 +899,7 @@ internal class DebugCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_IR_SUFFIX = "SET_IR"
         private const val ACTION_SET_JIT_SUFFIX = "SET_JIT"
         private const val ACTION_SET_BGOBJ_LOG_SUFFIX = "SET_BGOBJ_LOG"
+        private const val ACTION_SET_VULKAN_SIMPLE_PIPELINE_SUFFIX = "SET_VULKAN_SIMPLE_PIPELINE"
         private const val ACTION_SET_FAST_FORWARD_SUFFIX = "SET_FAST_FORWARD"
         private const val ACTION_SET_SLOT2_ANALOG_SUFFIX = "SET_SLOT2_ANALOG"
         private const val ACTION_SET_SLOT2_ANALOG_MAPPING_SUFFIX = "SET_SLOT2_ANALOG_MAPPING"

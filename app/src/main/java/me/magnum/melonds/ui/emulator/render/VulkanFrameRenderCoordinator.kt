@@ -415,6 +415,7 @@ class VulkanFrameRenderCoordinator(
             val surfaceId = MelonEmulator.attachVulkanSurface(surface, width, height)
             var shouldRefreshPresentation = false
             var staleSurfaceId = 0
+            var immediateConfig: VulkanPresentationConfig? = null
             synchronized(surfacesLock) {
                 val managedSurface = managedSurfaces[surfaceView]
                 if (managedSurface == null || managedSurface.pendingSurface !== surface || surfaceView.getCurrentSurface() !== surface) {
@@ -422,6 +423,7 @@ class VulkanFrameRenderCoordinator(
                 } else {
                     managedSurface.pendingSurface = null
                     managedSurface.surfaceId = surfaceId
+                    immediateConfig = managedSurface.config
                     shouldRefreshPresentation = surfaceId != 0
                 }
             }
@@ -429,6 +431,13 @@ class VulkanFrameRenderCoordinator(
             if (staleSurfaceId != 0) {
                 MelonEmulator.detachVulkanSurface(staleSurfaceId)
                 return
+            }
+
+            if (surfaceId != 0 && immediateConfig != null) {
+                // Apply the latest layout immediately on attach so the presenter
+                // becomes configured even before the async background decode path
+                // finishes or a later UI refresh happens.
+                MelonEmulator.configureVulkanSurface(surfaceId, immediateConfig!!, null)
             }
 
             if (shouldRefreshPresentation) {
