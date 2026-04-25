@@ -114,6 +114,8 @@ object MelonEmulator {
 
 	external fun resumeEmulation()
 
+    external fun debugStepFrame(): Boolean
+
     external fun resetEmulation()
 
 	external fun stopEmulation()

@@ -222,6 +222,10 @@ class AndroidEmulatorManager(
         MelonEmulator.resumeEmulation()
     }
 
+    override suspend fun debugStepFrame(): Boolean = withContext(Dispatchers.Default) {
+        MelonEmulator.debugStepFrame()
+    }
+
     override suspend fun resetEmulator() {
         MelonEmulator.resetEmulation()
     }

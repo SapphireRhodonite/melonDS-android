@@ -25,6 +25,7 @@
 -keep class me.magnum.melonds.domain.model.RendererConfiguration { *; }
 -keep class me.magnum.melonds.domain.model.FirmwareConfiguration { *; }
 -keep class me.magnum.melonds.domain.model.EmulatorConfiguration { *; }
+-keep class me.magnum.melonds.domain.model.Rect { *; }
 -keep class me.magnum.melonds.domain.model.AudioBitrate { *; }
 -keep class me.magnum.melonds.domain.model.AudioInterpolation { *; }
 -keep class me.magnum.melonds.domain.model.AudioLatency { *; }
@@ -33,12 +34,15 @@
 -keep class me.magnum.melonds.domain.model.Cheat { *; }
 -keep class me.magnum.melonds.domain.model.DSiWareTitle { *; }
 -keep class me.magnum.melonds.domain.model.VideoRenderer { *; }
+-keep class me.magnum.melonds.domain.model.VideoFiltering { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleAchievement { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleLeaderboard { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleRuntimeAchievement { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleRuntimeAchievementBucketEntry { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RARuntimeBridgeConfig { *; }
 -keep class me.magnum.melonds.ui.emulator.render.FrameRenderCallback { *; }
+-keep class me.magnum.melonds.ui.emulator.model.VulkanPresentationConfig { *; }
+-keep class me.magnum.melonds.domain.model.layout.BackgroundMode { *; }
 -keep class me.magnum.melonds.ui.emulator.rewind.model.RewindSaveState { *; }
 -keep class me.magnum.melonds.ui.emulator.rewind.model.RewindWindow { *; }
 -keep class me.magnum.melonds.ui.settings.fragments.**

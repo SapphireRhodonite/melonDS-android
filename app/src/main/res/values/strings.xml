@@ -252,9 +252,14 @@
     <string name="video_renderer_debug_tools_enabled_summary">Enables renderer snapshots, parity captures and performance/debug logs in release builds.</string>
     <string name="video_renderer_debug_bgobj_enabled">Show RendererDebug BGOBJ</string>
     <string name="video_renderer_debug_bgobj_enabled_summary">Enables extra RendererDebug[BGOBJ] logs for 2D compositor diagnosis. Requires Renderer debug tools.</string>
+    <string name="renderer_debug_menu">Renderer debug</string>
     <string name="renderer_debug_capture">Dump renderer capture</string>
     <string name="renderer_debug_capture_logged">Renderer capture dumped to Logcat. Capture ID: %1$s</string>
     <string name="renderer_debug_capture_failed">Renderer capture could not be dumped. Check that Renderer debug tools is enabled.</string>
+    <string name="renderer_2d_debug_controls">2D renderer controls</string>
+    <string name="renderer_2d_debug_controls_reset">Reset 2D controls</string>
+    <string name="renderer_3d_debug_controls">3D renderer controls</string>
+    <string name="renderer_3d_debug_controls_reset">Reset 3D controls</string>
     <string name="conservative_coverage_enabled">Conservative coverage fix (experimental)</string>
     <string name="conservative_coverage_enabled_summary">Expands polygon coverage in screen space to reduce 1px-2px cracks between polygons. Pokemon black lines fix. May cause slight overdraw.</string>
     <string name="conservative_coverage_px">Coverage expand</string>

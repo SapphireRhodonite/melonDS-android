@@ -21,6 +21,8 @@ sealed class EmulatorUiEvent {
     data object ShowPendingSubmissionsDialog : EmulatorUiEvent()
     data object CloseEmulator : EmulatorUiEvent()
     data object ShowDualScreenPresets : EmulatorUiEvent()
+    data object ShowRendererDebugMenu : EmulatorUiEvent()
+    data object ShowRenderer2DDebugControls : EmulatorUiEvent()
     data class ShowOfflineAchievementsSyncChoice(val pendingUnlockCount: Int) : EmulatorUiEvent()
     data class ShowHardcorePendingExitWarning(
         val pendingHardcoreCount: Int,

@@ -9,6 +9,7 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class EmulatorMessageQueue(private val eventHandler: EventHandler) {
 
@@ -94,29 +95,56 @@ class EmulatorMessageQueue(private val eventHandler: EventHandler) {
     }
 
     fun stop() {
-        handler.post {
-            if (!isRunning) {
-                return@post
+        if (!handlerThread.isAlive) {
+            return
+        }
+
+        if (Looper.myLooper() == handler.looper) {
+            stopOnQueueThread()
+        } else {
+            handler.post {
+                stopOnQueueThread()
             }
-
-            isRunning = false
-
-            messagesFileDescriptor?.let { fd ->
-                Looper.myLooper()?.queue?.removeOnFileDescriptorEventListener(fd.fileDescriptor)
-                fd.close()
-            }
-
-            inputStream = null
-            messagesFileDescriptor = null
-            closeMessagePipe()
         }
     }
 
     fun cleanup() {
-        handler.post {
-            stop()
+        if (Looper.myLooper() == handler.looper) {
+            stopOnQueueThread()
+            handlerThread.quitSafely()
+            return
         }
+
+        if (handlerThread.isAlive) {
+            val stopLatch = CountDownLatch(1)
+            handler.post {
+                try {
+                    stopOnQueueThread()
+                } finally {
+                    stopLatch.countDown()
+                }
+            }
+            stopLatch.await(1, TimeUnit.SECONDS)
+        }
+
         handlerThread.quitSafely()
+    }
+
+    private fun stopOnQueueThread() {
+        if (!isRunning) {
+            return
+        }
+
+        isRunning = false
+
+        messagesFileDescriptor?.let { fd ->
+            Looper.myLooper()?.queue?.removeOnFileDescriptorEventListener(fd.fileDescriptor)
+            fd.close()
+        }
+
+        inputStream = null
+        messagesFileDescriptor = null
+        closeMessagePipe()
     }
 
     private fun readEvents() {

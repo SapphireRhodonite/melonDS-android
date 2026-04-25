@@ -51,9 +51,19 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
+            externalNativeBuild {
+                cmake {
+                    arguments("-DMELONDS_ANDROID_DEBUG_BUILD=0")
+                }
+            }
         }
         getByName("debug") {
             applicationIdSuffix = ".dev"
+            externalNativeBuild {
+                cmake {
+                    arguments("-DMELONDS_ANDROID_DEBUG_BUILD=1")
+                }
+            }
         }
     }
 

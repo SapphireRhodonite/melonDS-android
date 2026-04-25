@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.4.1)
 
 add_compile_definitions(MELONDS_GL_HEADER=<GLES3/gl32.h>)
 add_compile_definitions(EGL_EGLEXT_PROTOTYPES)
+if (MELONDS_ANDROID_DEBUG_BUILD)
+    add_compile_definitions(MELONDS_ANDROID_DEBUG_BUILD=1)
+else()
+    add_compile_definitions(MELONDS_ANDROID_DEBUG_BUILD=0)
+endif()
 
 set(CORE_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../melonDS-android-lib")
 set(VULKAN_SPIRV_REGEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/regenerate_vulkan_spirv.sh")

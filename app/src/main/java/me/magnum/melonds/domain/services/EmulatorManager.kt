@@ -34,6 +34,8 @@ interface EmulatorManager {
 
     suspend fun resumeEmulator()
 
+    suspend fun debugStepFrame(): Boolean
+
     suspend fun resetEmulator()
 
     suspend fun updateCheats(cheats: List<Cheat>)

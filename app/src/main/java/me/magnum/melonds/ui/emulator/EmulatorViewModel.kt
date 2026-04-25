@@ -874,6 +874,12 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
+    fun debugStepFrame() {
+        sessionCoroutineScope.launch {
+            emulatorManager.debugStepFrame()
+        }
+    }
+
     fun resetEmulator() {
         if (_emulatorState.value.isRunning()) {
             sessionCoroutineScope.launch {
@@ -1067,7 +1073,7 @@ class EmulatorViewModel @Inject constructor(
                     }
                     RomPauseMenuOption.VIEW_ACHIEVEMENTS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowAchievementList)
                     RomPauseMenuOption.PRESETS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowDualScreenPresets)
-                    RomPauseMenuOption.RENDERER_DEBUG_CAPTURE -> dumpRendererDebugCapture()
+                    RomPauseMenuOption.RENDERER_DEBUG -> _uiEvent.tryEmit(EmulatorUiEvent.ShowRendererDebugMenu)
                     RomPauseMenuOption.RESET -> resetEmulator()
                     RomPauseMenuOption.EXIT -> exitEmulator()
                 }
@@ -1085,7 +1091,7 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
-    private fun dumpRendererDebugCapture() {
+    fun dumpRendererDebugCapture() {
         sessionCoroutineScope.launch {
             val rendererDebugToolsEnabled = settingsRepository.isRendererDebugToolsEnabled().firstOrNull() == true
             if (!rendererDebugToolsEnabled) {
@@ -3062,7 +3068,7 @@ class EmulatorViewModel @Inject constructor(
             RomPauseMenuOption.LOAD_STATE -> emulatorSession.areSaveStateLoadsAllowed()
             RomPauseMenuOption.CHEATS -> emulatorSession.areCheatsEnabled()
             RomPauseMenuOption.VIEW_ACHIEVEMENTS -> emulatorSession.isRetroAchievementsEnabledForSession()
-            RomPauseMenuOption.RENDERER_DEBUG_CAPTURE -> rendererDebugToolsEnabled
+            RomPauseMenuOption.RENDERER_DEBUG -> rendererDebugToolsEnabled
             else -> true
         }
     }

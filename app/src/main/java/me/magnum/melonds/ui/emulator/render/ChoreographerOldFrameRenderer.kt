@@ -6,6 +6,7 @@ private const val DEFAULT_FRAME_PERIOD_NS = 16666666L // 16.6ms (60 FPS)
 
 class ChoreographerOldFrameRenderer(private val frameRenderCoordinator: FrameRenderCoordinator) : ChoreographerFrameRenderer, Choreographer.FrameCallback {
 
+    private var isRendering = false
     private var framePeriodNs = DEFAULT_FRAME_PERIOD_NS
 
     private var framePeriodSampleCount = 0
@@ -13,6 +14,11 @@ class ChoreographerOldFrameRenderer(private val frameRenderCoordinator: FrameRen
     private val framePeriodSamples = LongArray(11)
 
     override fun startRendering() {
+        if (isRendering) {
+            return
+        }
+
+        isRendering = true
         // Reset frame period every time the rendering starts
         framePeriodNs = DEFAULT_FRAME_PERIOD_NS
         lastFrameTimeNs = 0
@@ -20,10 +26,15 @@ class ChoreographerOldFrameRenderer(private val frameRenderCoordinator: FrameRen
     }
 
     override fun stopRendering() {
+        isRendering = false
         Choreographer.getInstance().removeFrameCallback(this)
     }
 
     override fun doFrame(frameTimeNanos: Long) {
+        if (!isRendering) {
+            return
+        }
+
         if (lastFrameTimeNs > 0L) {
             framePeriodSamples[framePeriodSampleCount++] = frameTimeNanos - lastFrameTimeNs
             if (framePeriodSampleCount == framePeriodSamples.size) {
@@ -38,6 +49,8 @@ class ChoreographerOldFrameRenderer(private val frameRenderCoordinator: FrameRen
 
         val frameDeadline = framePeriodNs.takeIf { it > ChoreographerFrameRenderer.DEADLINE_FRAME_TIME_THRESHOLD }?.plus(frameTimeNanos)
         frameRenderCoordinator.renderFrame(frameDeadline)
-        Choreographer.getInstance().postFrameCallback(this)
+        if (isRendering) {
+            Choreographer.getInstance().postFrameCallback(this)
+        }
     }
 }

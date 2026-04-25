@@ -30,6 +30,10 @@
 
 #include "Platform.h"
 
+#ifndef MELONDS_ANDROID_DEBUG_BUILD
+#define MELONDS_ANDROID_DEBUG_BUILD 0
+#endif
+
 enum GbaSlotType {
     NONE = 0,
     GBA_ROM = 1,
@@ -48,6 +52,7 @@ pthread_cond_t emuThreadCond;
 bool started = false;
 bool stop;
 bool paused;
+bool frameStepRequested = false;
 std::atomic_bool isThreadReallyPaused = false;
 int observedFrames = 0;
 float fps = 0;
@@ -64,6 +69,11 @@ std::mutex frameRenderCallbackLock;
 
 namespace
 {
+bool rendererDebugControlsAvailable()
+{
+    return MELONDS_ANDROID_DEBUG_BUILD != 0;
+}
+
 void clearPendingJniException(JNIEnv* env)
 {
     if (env->ExceptionCheck())
@@ -338,6 +348,114 @@ bool getIntFieldByName(JNIEnv* env, jobject targetObject, const char* fieldName,
     return true;
 }
 
+jobject callObjectGetter(JNIEnv* env, jobject targetObject, const char* methodName, const char* signature)
+{
+    if (targetObject == nullptr || methodName == nullptr || signature == nullptr)
+        return nullptr;
+
+    jclass targetClass = env->GetObjectClass(targetObject);
+    if (targetClass == nullptr)
+        return nullptr;
+
+    jmethodID method = env->GetMethodID(targetClass, methodName, signature);
+    env->DeleteLocalRef(targetClass);
+    if (method == nullptr)
+    {
+        clearPendingJniException(env);
+        return nullptr;
+    }
+
+    jobject valueObject = env->CallObjectMethod(targetObject, method);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return nullptr;
+    }
+
+    return valueObject;
+}
+
+bool callFloatGetter(JNIEnv* env, jobject targetObject, const char* methodName, float* valueOut)
+{
+    if (targetObject == nullptr || methodName == nullptr || valueOut == nullptr)
+        return false;
+
+    jclass targetClass = env->GetObjectClass(targetObject);
+    if (targetClass == nullptr)
+        return false;
+
+    jmethodID method = env->GetMethodID(targetClass, methodName, "()F");
+    env->DeleteLocalRef(targetClass);
+    if (method == nullptr)
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    *valueOut = env->CallFloatMethod(targetObject, method);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool callBooleanGetter(JNIEnv* env, jobject targetObject, const char* methodName, bool* valueOut)
+{
+    if (targetObject == nullptr || methodName == nullptr || valueOut == nullptr)
+        return false;
+
+    jclass targetClass = env->GetObjectClass(targetObject);
+    if (targetClass == nullptr)
+        return false;
+
+    jmethodID method = env->GetMethodID(targetClass, methodName, "()Z");
+    env->DeleteLocalRef(targetClass);
+    if (method == nullptr)
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    *valueOut = env->CallBooleanMethod(targetObject, method);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
+bool callIntGetter(JNIEnv* env, jobject targetObject, const char* methodName, int* valueOut)
+{
+    if (targetObject == nullptr || methodName == nullptr || valueOut == nullptr)
+        return false;
+
+    jclass targetClass = env->GetObjectClass(targetObject);
+    if (targetClass == nullptr)
+        return false;
+
+    jmethodID method = env->GetMethodID(targetClass, methodName, "()I");
+    env->DeleteLocalRef(targetClass);
+    if (method == nullptr)
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    *valueOut = env->CallIntMethod(targetObject, method);
+    if (env->ExceptionCheck())
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    return true;
+}
+
 bool mapRect(JNIEnv* env, jobject rectObject, MelonDSAndroid::VulkanPresenterRect* rectOut)
 {
     if (rectOut == nullptr)
@@ -357,10 +475,10 @@ bool mapRect(JNIEnv* env, jobject rectObject, MelonDSAndroid::VulkanPresenterRec
     int y = 0;
     int width = 0;
     int height = 0;
-    if (!getIntFieldByName(env, rectObject, "x", &x)
-        || !getIntFieldByName(env, rectObject, "y", &y)
-        || !getIntFieldByName(env, rectObject, "width", &width)
-        || !getIntFieldByName(env, rectObject, "height", &height))
+    if (!callIntGetter(env, rectObject, "getX", &x)
+        || !callIntGetter(env, rectObject, "getY", &y)
+        || !callIntGetter(env, rectObject, "getWidth", &width)
+        || !callIntGetter(env, rectObject, "getHeight", &height))
     {
         return false;
     }
@@ -377,19 +495,39 @@ bool mapVulkanPresentationConfig(JNIEnv* env, jobject configObject, MelonDSAndro
     if (configObject == nullptr || configOut == nullptr)
         return false;
 
-    jobject topRectObject = getObjectFieldByName(env, configObject, "topScreenRect");
-    jobject bottomRectObject = getObjectFieldByName(env, configObject, "bottomScreenRect");
-    jobject backgroundModeObject = getObjectFieldByName(env, configObject, "backgroundMode");
-    jobject filteringObject = getObjectFieldByName(env, configObject, "videoFiltering");
+    jobject topRectObject = callObjectGetter(
+        env,
+        configObject,
+        "getTopScreenRect",
+        "()Lme/magnum/melonds/domain/model/Rect;"
+    );
+    jobject bottomRectObject = callObjectGetter(
+        env,
+        configObject,
+        "getBottomScreenRect",
+        "()Lme/magnum/melonds/domain/model/Rect;"
+    );
+    jobject backgroundModeObject = callObjectGetter(
+        env,
+        configObject,
+        "getBackgroundMode",
+        "()Lme/magnum/melonds/domain/model/layout/BackgroundMode;"
+    );
+    jobject filteringObject = callObjectGetter(
+        env,
+        configObject,
+        "getVideoFiltering",
+        "()Lme/magnum/melonds/domain/model/VideoFiltering;"
+    );
 
     float topAlpha = 1.0f;
     float bottomAlpha = 1.0f;
     bool topOnTop = false;
     bool bottomOnTop = false;
-    bool result = getFloatFieldByName(env, configObject, "topAlpha", &topAlpha)
-        && getFloatFieldByName(env, configObject, "bottomAlpha", &bottomAlpha)
-        && getBooleanFieldByName(env, configObject, "topOnTop", &topOnTop)
-        && getBooleanFieldByName(env, configObject, "bottomOnTop", &bottomOnTop);
+    bool result = callFloatGetter(env, configObject, "getTopAlpha", &topAlpha)
+        && callFloatGetter(env, configObject, "getBottomAlpha", &bottomAlpha)
+        && callBooleanGetter(env, configObject, "getTopOnTop", &topOnTop)
+        && callBooleanGetter(env, configObject, "getBottomOnTop", &bottomOnTop);
 
     configOut->topAlpha = topAlpha;
     configOut->bottomAlpha = bottomAlpha;
@@ -752,6 +890,7 @@ JNIEXPORT void JNICALL
 Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz)
 {
     stop = false;
+    frameStepRequested = false;
     isThreadReallyPaused = false;
     limitFps = true;
     targetFps = 60;
@@ -875,7 +1014,13 @@ Java_me_magnum_melonds_MelonEmulator_configureVulkanSurface(
 
     MelonDSAndroid::VulkanSurfaceConfig nativeConfig{};
     if (!mapVulkanPresentationConfig(env, presentationConfig, &nativeConfig))
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "VulkanSurfaceConfig: failed to map Kotlin presentation config"
+        );
         return;
+    }
 
     MelonDSAndroid::VulkanBackgroundImage nativeBackground{};
     AndroidBitmapInfo bitmapInfo{};
@@ -965,6 +1110,111 @@ static jintArray MakeJavaIntArray(JNIEnv* env, const std::vector<u32>& values)
         reinterpret_cast<const jint*>(values.data())
     );
     return output;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getRenderer2DDebugControls(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    if (!rendererDebugControlsAvailable())
+        return nullptr;
+
+    const MelonDSAndroid::Renderer2DDebugControlState state = MelonDSAndroid::getRenderer2DDebugControls();
+    const jint values[] = {
+        static_cast<jint>(state.mainForcedMode),
+        static_cast<jint>(state.subForcedMode),
+        static_cast<jint>(state.topForcedCompMode),
+        static_cast<jint>(state.bottomForcedCompMode),
+        static_cast<jint>(state.disabledMainBgMask),
+        static_cast<jint>(state.disabledSubBgMask),
+        static_cast<jint>(state.disabledMainBgPriorityMask),
+        static_cast<jint>(state.disabledSubBgPriorityMask),
+        static_cast<jint>(state.disabledMainObjPriorityMask),
+        static_cast<jint>(state.disabledSubObjPriorityMask),
+        static_cast<jint>(state.disabledMainObjOrderMask),
+        static_cast<jint>(state.disabledSubObjOrderMask),
+        static_cast<jint>(state.featureMask),
+    };
+
+    jintArray output = env->NewIntArray(13);
+    if (output == nullptr)
+        return nullptr;
+
+    env->SetIntArrayRegion(output, 0, 13, values);
+    return output;
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_setRenderer2DDebugControls(
+    JNIEnv* env,
+    jobject thiz,
+    jint mainForcedMode,
+    jint subForcedMode,
+    jint topForcedCompMode,
+    jint bottomForcedCompMode,
+    jint disabledMainBgMask,
+    jint disabledSubBgMask,
+    jint disabledMainBgPriorityMask,
+    jint disabledSubBgPriorityMask,
+    jint disabledMainObjPriorityMask,
+    jint disabledSubObjPriorityMask,
+    jint disabledMainObjOrderMask,
+    jint disabledSubObjOrderMask,
+    jint featureMask)
+{
+    (void)env;
+    (void)thiz;
+    if (!rendererDebugControlsAvailable())
+        return;
+
+    MelonDSAndroid::setRenderer2DDebugControls(
+        static_cast<int>(mainForcedMode),
+        static_cast<int>(subForcedMode),
+        static_cast<int>(topForcedCompMode),
+        static_cast<int>(bottomForcedCompMode),
+        static_cast<u32>(disabledMainBgMask),
+        static_cast<u32>(disabledSubBgMask),
+        static_cast<u32>(disabledMainBgPriorityMask),
+        static_cast<u32>(disabledSubBgPriorityMask),
+        static_cast<u32>(disabledMainObjPriorityMask),
+        static_cast<u32>(disabledSubObjPriorityMask),
+        static_cast<u32>(disabledMainObjOrderMask),
+        static_cast<u32>(disabledSubObjOrderMask),
+        static_cast<u32>(featureMask));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_getRenderer3DDebugControls(JNIEnv* env, jobject thiz)
+{
+    (void)thiz;
+    if (!rendererDebugControlsAvailable())
+        return nullptr;
+
+    const MelonDSAndroid::Renderer3DDebugControlState state = MelonDSAndroid::getRenderer3DDebugControls();
+    const jint values[] = {
+        static_cast<jint>(state.featureMask),
+    };
+
+    jintArray output = env->NewIntArray(1);
+    if (output == nullptr)
+        return nullptr;
+
+    env->SetIntArrayRegion(output, 0, 1, values);
+    return output;
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_impl_emulator_debug_RendererDebugBridge_setRenderer3DDebugControls(
+    JNIEnv* env,
+    jobject thiz,
+    jint featureMask)
+{
+    (void)env;
+    (void)thiz;
+    if (!rendererDebugControlsAvailable())
+        return;
+
+    MelonDSAndroid::setRenderer3DDebugControls(static_cast<u32>(featureMask));
 }
 
 JNIEXPORT jintArray JNICALL
@@ -1216,6 +1466,7 @@ Java_me_magnum_melonds_MelonEmulator_pauseEmulation(JNIEnv* env, jobject thiz)
     }
 
     if (!stop) {
+        frameStepRequested = false;
         paused = true;
     }
 
@@ -1234,6 +1485,7 @@ Java_me_magnum_melonds_MelonEmulator_resumeEmulation(JNIEnv* env, jobject thiz)
     }
 
     if (!stop) {
+        frameStepRequested = false;
         paused = false;
         if (started) {
             pthread_cond_broadcast(&emuThreadCond);
@@ -1245,6 +1497,44 @@ Java_me_magnum_melonds_MelonEmulator_resumeEmulation(JNIEnv* env, jobject thiz)
     }
 
     MelonDSAndroid::resume();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_me_magnum_melonds_MelonEmulator_debugStepFrame(JNIEnv* env, jobject thiz)
+{
+    (void)env;
+    (void)thiz;
+    if (!rendererDebugControlsAvailable())
+        return JNI_FALSE;
+
+    if (!started)
+        return JNI_FALSE;
+
+    pthread_mutex_lock(&emuThreadMutex);
+    if (stop)
+    {
+        pthread_mutex_unlock(&emuThreadMutex);
+        return JNI_FALSE;
+    }
+    frameStepRequested = false;
+    paused = true;
+    pthread_mutex_unlock(&emuThreadMutex);
+
+    MelonDSAndroid::pause();
+
+    // Make sure the emulation thread is stopped before releasing one frame.
+    while (started && !stop && !isThreadReallyPaused);
+
+    pthread_mutex_lock(&emuThreadMutex);
+    if (!stop)
+    {
+        frameStepRequested = true;
+        paused = false;
+        pthread_cond_broadcast(&emuThreadCond);
+    }
+    pthread_mutex_unlock(&emuThreadMutex);
+
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
@@ -1372,6 +1662,7 @@ Java_me_magnum_melonds_MelonEmulator_stopEmulation(JNIEnv* env, jobject thiz)
         pthread_mutex_lock(&emuThreadMutex);
         stop = true;
         paused = false;
+        frameStepRequested = false;
         started = false;
         pthread_cond_broadcast(&emuThreadCond);
         pthread_mutex_unlock(&emuThreadMutex);
@@ -1513,6 +1804,7 @@ void* emulate(void*)
 
     for (;;)
     {
+        bool pauseAfterCurrentFrame = false;
         pthread_mutex_lock(&emuThreadMutex);
         if (paused) {
             isThreadReallyPaused = true;
@@ -1529,6 +1821,8 @@ void* emulate(void*)
             break;
         }
 
+        pauseAfterCurrentFrame = frameStepRequested;
+        frameStepRequested = false;
         pthread_mutex_unlock(&emuThreadMutex);
 
         u32 nLines = MelonDSAndroid::loop();
@@ -1572,6 +1866,15 @@ void* emulate(void*)
             fps = (observedFrames * 1000.0) / (lastTick - lastMeasureFpsTick);
             lastMeasureFpsTick = lastTick;
             observedFrames = 0;
+        }
+
+        if (pauseAfterCurrentFrame)
+        {
+            pthread_mutex_lock(&emuThreadMutex);
+            if (!stop)
+                paused = true;
+            pthread_mutex_unlock(&emuThreadMutex);
+            MelonDSAndroid::pause();
         }
 
     }
