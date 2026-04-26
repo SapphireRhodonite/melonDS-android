@@ -9,6 +9,7 @@
 #include <vector>
 #include <mutex>
 #include <algorithm>
+#include <cstring>
 #include <stdlib.h>
 #include <cstdint>
 #include <chrono>
@@ -88,6 +89,7 @@ MelonDSAndroid::VulkanFilterMode mapVulkanFilterMode(jint ordinal)
         case 7: return MelonDSAndroid::VulkanFilterMode::Lcd;
         case 8: return MelonDSAndroid::VulkanFilterMode::LcdGridDsLite;
         case 9: return MelonDSAndroid::VulkanFilterMode::Scanlines;
+        case 10: return MelonDSAndroid::VulkanFilterMode::RetroArch;
         case 0:
         default: return MelonDSAndroid::VulkanFilterMode::Nearest;
     }
@@ -394,6 +396,129 @@ jobject callObjectGetter(JNIEnv* env, jobject targetObject, const char* methodNa
     return valueObject;
 }
 
+bool callStringGetter(JNIEnv* env, jobject targetObject, const char* methodName, std::string* valueOut)
+{
+    if (valueOut == nullptr)
+        return false;
+
+    jobject valueObject = callObjectGetter(env, targetObject, methodName, "()Ljava/lang/String;");
+    if (valueObject == nullptr)
+    {
+        valueOut->clear();
+        return true;
+    }
+
+    auto valueString = static_cast<jstring>(valueObject);
+    const char* chars = env->GetStringUTFChars(valueString, nullptr);
+    if (chars == nullptr)
+    {
+        env->DeleteLocalRef(valueObject);
+        clearPendingJniException(env);
+        return false;
+    }
+
+    *valueOut = chars;
+    env->ReleaseStringUTFChars(valueString, chars);
+    env->DeleteLocalRef(valueObject);
+    return true;
+}
+
+bool mapStringFloatMap(JNIEnv* env, jobject mapObject, std::vector<std::pair<std::string, float>>& outValues)
+{
+    outValues.clear();
+    if (mapObject == nullptr)
+        return true;
+
+    jclass mapClass = env->FindClass("java/util/Map");
+    jclass setClass = env->FindClass("java/util/Set");
+    jclass iteratorClass = env->FindClass("java/util/Iterator");
+    jclass entryClass = env->FindClass("java/util/Map$Entry");
+    jclass numberClass = env->FindClass("java/lang/Number");
+    if (mapClass == nullptr || setClass == nullptr || iteratorClass == nullptr || entryClass == nullptr || numberClass == nullptr)
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    jmethodID entrySetMethod = env->GetMethodID(mapClass, "entrySet", "()Ljava/util/Set;");
+    jmethodID iteratorMethod = env->GetMethodID(setClass, "iterator", "()Ljava/util/Iterator;");
+    jmethodID hasNextMethod = env->GetMethodID(iteratorClass, "hasNext", "()Z");
+    jmethodID nextMethod = env->GetMethodID(iteratorClass, "next", "()Ljava/lang/Object;");
+    jmethodID getKeyMethod = env->GetMethodID(entryClass, "getKey", "()Ljava/lang/Object;");
+    jmethodID getValueMethod = env->GetMethodID(entryClass, "getValue", "()Ljava/lang/Object;");
+    jmethodID floatValueMethod = env->GetMethodID(numberClass, "floatValue", "()F");
+
+    env->DeleteLocalRef(mapClass);
+    env->DeleteLocalRef(setClass);
+    env->DeleteLocalRef(iteratorClass);
+    env->DeleteLocalRef(entryClass);
+    env->DeleteLocalRef(numberClass);
+
+    if (entrySetMethod == nullptr || iteratorMethod == nullptr || hasNextMethod == nullptr || nextMethod == nullptr
+        || getKeyMethod == nullptr || getValueMethod == nullptr || floatValueMethod == nullptr)
+    {
+        clearPendingJniException(env);
+        return false;
+    }
+
+    jobject entrySet = env->CallObjectMethod(mapObject, entrySetMethod);
+    jobject iterator = entrySet != nullptr ? env->CallObjectMethod(entrySet, iteratorMethod) : nullptr;
+    if (env->ExceptionCheck() || iterator == nullptr)
+    {
+        clearPendingJniException(env);
+        if (entrySet != nullptr)
+            env->DeleteLocalRef(entrySet);
+        return false;
+    }
+
+    while (env->CallBooleanMethod(iterator, hasNextMethod))
+    {
+        jobject entry = env->CallObjectMethod(iterator, nextMethod);
+        jobject keyObject = entry != nullptr ? env->CallObjectMethod(entry, getKeyMethod) : nullptr;
+        jobject valueObject = entry != nullptr ? env->CallObjectMethod(entry, getValueMethod) : nullptr;
+        if (env->ExceptionCheck())
+        {
+            clearPendingJniException(env);
+            if (entry != nullptr)
+                env->DeleteLocalRef(entry);
+            if (keyObject != nullptr)
+                env->DeleteLocalRef(keyObject);
+            if (valueObject != nullptr)
+                env->DeleteLocalRef(valueObject);
+            env->DeleteLocalRef(iterator);
+            env->DeleteLocalRef(entrySet);
+            return false;
+        }
+
+        if (keyObject != nullptr && valueObject != nullptr)
+        {
+            auto keyString = static_cast<jstring>(keyObject);
+            const char* keyChars = env->GetStringUTFChars(keyString, nullptr);
+            const float value = env->CallFloatMethod(valueObject, floatValueMethod);
+            if (keyChars != nullptr && !env->ExceptionCheck())
+            {
+                outValues.emplace_back(keyChars, value);
+                env->ReleaseStringUTFChars(keyString, keyChars);
+            }
+            else
+            {
+                clearPendingJniException(env);
+            }
+        }
+
+        if (entry != nullptr)
+            env->DeleteLocalRef(entry);
+        if (keyObject != nullptr)
+            env->DeleteLocalRef(keyObject);
+        if (valueObject != nullptr)
+            env->DeleteLocalRef(valueObject);
+    }
+
+    env->DeleteLocalRef(iterator);
+    env->DeleteLocalRef(entrySet);
+    return !env->ExceptionCheck();
+}
+
 bool callFloatGetter(JNIEnv* env, jobject targetObject, const char* methodName, float* valueOut)
 {
     if (targetObject == nullptr || methodName == nullptr || valueOut == nullptr)
@@ -538,20 +663,45 @@ bool mapVulkanPresentationConfig(JNIEnv* env, jobject configObject, MelonDSAndro
         "getVideoFiltering",
         "()Lme/magnum/melonds/domain/model/VideoFiltering;"
     );
+    jobject retroShaderParametersObject = callObjectGetter(
+        env,
+        configObject,
+        "getRetroShaderParameterOverrides",
+        "()Ljava/util/Map;"
+    );
 
     float topAlpha = 1.0f;
     float bottomAlpha = 1.0f;
     bool topOnTop = false;
     bool bottomOnTop = false;
+    bool retroShaderEnabled = false;
+    bool retroShaderClearHistory = false;
+    std::string retroShaderPresetPath;
+    std::string retroShaderSourceResolution;
+    int retroShaderPassCount = 0;
     bool result = callFloatGetter(env, configObject, "getTopAlpha", &topAlpha)
         && callFloatGetter(env, configObject, "getBottomAlpha", &bottomAlpha)
         && callBooleanGetter(env, configObject, "getTopOnTop", &topOnTop)
-        && callBooleanGetter(env, configObject, "getBottomOnTop", &bottomOnTop);
+        && callBooleanGetter(env, configObject, "getBottomOnTop", &bottomOnTop)
+        && callBooleanGetter(env, configObject, "getRetroShaderEnabled", &retroShaderEnabled)
+        && callStringGetter(env, configObject, "getRetroShaderPresetPath", &retroShaderPresetPath)
+        && callStringGetter(env, configObject, "getRetroShaderSourceResolution", &retroShaderSourceResolution)
+        && callIntGetter(env, configObject, "getRetroShaderPassCount", &retroShaderPassCount)
+        && callBooleanGetter(env, configObject, "getRetroShaderClearHistory", &retroShaderClearHistory);
 
     configOut->topAlpha = topAlpha;
     configOut->bottomAlpha = bottomAlpha;
     configOut->topOnTop = topOnTop;
     configOut->bottomOnTop = bottomOnTop;
+    configOut->retroShaderEnabled = retroShaderEnabled;
+    configOut->retroShaderPresetPath = retroShaderPresetPath;
+    configOut->retroShaderSourceResolution =
+        retroShaderSourceResolution == "native"
+            ? MelonDSAndroid::RetroArchSourceResolution::Native
+            : MelonDSAndroid::RetroArchSourceResolution::VulkanIr;
+    configOut->retroShaderPassCount = static_cast<melonDS::u32>(std::max(0, retroShaderPassCount));
+    configOut->retroShaderClearHistory = retroShaderClearHistory;
+    result = result && mapStringFloatMap(env, retroShaderParametersObject, configOut->retroShaderParameterOverrides);
 
     result = result
         && backgroundModeObject != nullptr
@@ -589,6 +739,10 @@ bool mapVulkanPresentationConfig(JNIEnv* env, jobject configObject, MelonDSAndro
     }
 
     configOut->filtering = mapVulkanFilterMode(filteringOrdinal);
+    if (!configOut->retroShaderEnabled || configOut->retroShaderPresetPath.empty())
+        configOut->filtering = configOut->filtering == MelonDSAndroid::VulkanFilterMode::RetroArch
+            ? MelonDSAndroid::VulkanFilterMode::Nearest
+            : configOut->filtering;
 
     if (topRectObject != nullptr)
         env->DeleteLocalRef(topRectObject);
@@ -598,6 +752,8 @@ bool mapVulkanPresentationConfig(JNIEnv* env, jobject configObject, MelonDSAndro
         env->DeleteLocalRef(backgroundModeObject);
     if (filteringObject != nullptr)
         env->DeleteLocalRef(filteringObject);
+    if (retroShaderParametersObject != nullptr)
+        env->DeleteLocalRef(retroShaderParametersObject);
 
     return result;
 }
@@ -904,7 +1060,7 @@ Java_me_magnum_melonds_MelonEmulator_bootFirmwareInternal(JNIEnv* env, jobject t
 }
 
 JNIEXPORT void JNICALL
-Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz)
+Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz, jboolean startPaused)
 {
     stop = false;
     frameStepRequested = false;
@@ -912,6 +1068,7 @@ Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz)
     limitFps = true;
     targetFps = 60;
     isFastForwardEnabled = false;
+    paused = startPaused == JNI_TRUE;
 
     pthread_mutex_init(&emuThreadMutex, NULL);
     pthread_cond_init(&emuThreadCond, NULL);
@@ -922,9 +1079,50 @@ Java_me_magnum_melonds_MelonEmulator_startEmulation(JNIEnv* env, jobject thiz)
 }
 
 JNIEXPORT jboolean JNICALL
-Java_me_magnum_melonds_MelonEmulator_precompileVulkanPipelines(JNIEnv* env, jobject thiz)
+Java_me_magnum_melonds_MelonEmulator_precompileVulkanPipelines(
+    JNIEnv* env,
+    jobject thiz,
+    jint videoFilteringOrdinal,
+    jstring retroShaderPresetPath,
+    jstring retroShaderSourceResolution,
+    jint retroShaderPassCount,
+    jobject retroShaderParameterOverrides)
 {
-    return MelonDSAndroid::precompileVulkanPipelines() ? JNI_TRUE : JNI_FALSE;
+    MelonDSAndroid::VulkanSurfaceConfig retroConfig{};
+    retroConfig.filtering = mapVulkanFilterMode(videoFilteringOrdinal);
+    retroConfig.retroShaderEnabled = retroConfig.filtering == MelonDSAndroid::VulkanFilterMode::RetroArch;
+    retroConfig.retroShaderPassCount = static_cast<melonDS::u32>(std::max(0, static_cast<int>(retroShaderPassCount)));
+
+    if (retroShaderPresetPath != nullptr)
+    {
+        const char* presetPath = env->GetStringUTFChars(retroShaderPresetPath, nullptr);
+        if (presetPath != nullptr)
+        {
+            retroConfig.retroShaderPresetPath = presetPath;
+            env->ReleaseStringUTFChars(retroShaderPresetPath, presetPath);
+        }
+    }
+
+    if (retroShaderSourceResolution != nullptr)
+    {
+        const char* sourceResolution = env->GetStringUTFChars(retroShaderSourceResolution, nullptr);
+        if (sourceResolution != nullptr)
+        {
+            retroConfig.retroShaderSourceResolution =
+                std::strcmp(sourceResolution, "native") == 0
+                    ? MelonDSAndroid::RetroArchSourceResolution::Native
+                    : MelonDSAndroid::RetroArchSourceResolution::VulkanIr;
+            env->ReleaseStringUTFChars(retroShaderSourceResolution, sourceResolution);
+        }
+    }
+
+    if (!mapStringFloatMap(env, retroShaderParameterOverrides, retroConfig.retroShaderParameterOverrides))
+        retroConfig.retroShaderParameterOverrides.clear();
+
+    if (retroConfig.retroShaderPresetPath.empty())
+        retroConfig.retroShaderEnabled = false;
+
+    return MelonDSAndroid::precompileVulkanPipelines(retroConfig) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

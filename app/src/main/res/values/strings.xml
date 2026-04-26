@@ -98,11 +98,13 @@
     <string name="info_play_time_minutes">Play time: %1$dm</string> <!-- Ex: 28m -->
     <string name="info_loading">LOADING…</string>
     <string name="info_vulkan_compiling_title">Building Vulkan shaders…</string>
+    <string name="info_retroarch_compiling_title">Building RetroArch shaders…</string>
     <string name="info_vulkan_compiling_progress">%1$s (%2$d/%3$d)</string>
     <string name="info_vulkan_compiling_stage_init">Initializing Vulkan renderer</string>
     <string name="info_vulkan_compiling_stage_pipelines">Building Vulkan pipelines</string>
     <string name="info_vulkan_compiling_stage_output">Initializing Vulkan output</string>
     <string name="info_vulkan_compiling_stage_warmup">Warming up first frame</string>
+    <string name="info_vulkan_compiling_stage_retroarch">Preparing RetroArch shader</string>
     <string name="save_state_slot">%1$s.</string>
     <string name="failed_save_state">Failed to save state</string>
     <string name="failed_load_state">Failed to load state</string>
@@ -722,11 +724,20 @@
         <item>LCD</item>
         <item>LCD Grid (DS Lite motion blur)</item>
         <item>Scanlines</item>
+        <item>RetroArch (.slangp)</item>
         <item>Custom (msha)</item>
     </string-array>
 
     <string name="video_custom_shader_title">Custom shader (.msha)</string>
     <string name="video_custom_shader_summary">Select a melon shader (.msha) file to use when Custom filtering is selected.</string>
+    <string name="video_retroarch_shader_root_title">RetroArch shader root</string>
+    <string name="video_retroarch_shader_root_summary">Select the top-level slang-shaders folder so presets can resolve sibling shader, include, and LUT folders.</string>
+    <string name="video_retroarch_shader_preset_title">RetroArch preset path</string>
+    <string name="video_retroarch_shader_preset_summary">Relative .slangp path inside the selected shader root.</string>
+    <string name="video_retroarch_shader_parameters_title">RetroArch preset parameters</string>
+    <string name="video_retroarch_shader_parameters_summary">Optional overrides, for example curvature=0.25,mask_strength=0.6.</string>
+    <string name="video_retroarch_shader_clear_history_title">Clear RetroArch shader history</string>
+    <string name="video_retroarch_shader_clear_history_summary">Reset multipass history on the next presentation config update.</string>
 
     <string-array name="dsi_camera_source_options">
         <item>Black screen</item>

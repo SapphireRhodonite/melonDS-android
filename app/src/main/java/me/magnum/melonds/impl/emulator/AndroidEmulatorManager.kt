@@ -129,7 +129,8 @@ class AndroidEmulatorManager(
             val fileRomProcessor = romFileProcessorFactory.getFileRomProcessorForDocument(fileRomDocument)
             val romUri = fileRomProcessor?.getRealRomUri(rom)?.await() ?: throw RomLoadException("Unsupported ROM file extension: ${fileRomDocument.extension}")
 
-            setupEmulator(getRomEmulatorConfiguration(rom))
+            val emulatorConfiguration = getRomEmulatorConfiguration(rom)
+            setupEmulator(emulatorConfiguration)
 
             val sram = try {
                 sramProvider.getSramForRom(rom)
@@ -160,14 +161,14 @@ class AndroidEmulatorManager(
                 RomLaunchResult.LaunchFailed(loadResult)
             } else {
                 messageQueue.start()
-                if (!MelonEmulator.precompileVulkanPipelines()) {
+                if (!precompileVulkanPipelines(emulatorConfiguration)) {
                     cameraManager.stopCurrentCameraSource()
                     MelonEmulator.stopEmulation()
                     messageQueue.stop()
                     return@withContext RomLaunchResult.LaunchFailed(MelonEmulator.LoadResult.NDS_FAILED)
                 }
                 MelonEmulator.setupCheats(cheats.toTypedArray())
-                MelonEmulator.startEmulation()
+                MelonEmulator.startEmulation(startPaused = true)
 
                 RomLaunchResult.LaunchSuccessful(loadResult != MelonEmulator.LoadResult.SUCCESS_GBA_FAILED)
             }
@@ -176,7 +177,8 @@ class AndroidEmulatorManager(
 
     override suspend fun loadFirmware(consoleType: ConsoleType): FirmwareLaunchResult {
         return withContext(Dispatchers.IO) {
-            setupEmulator(getFirmwareEmulatorConfiguration(consoleType))
+            val emulatorConfiguration = getFirmwareEmulatorConfiguration(consoleType)
+            setupEmulator(emulatorConfiguration)
             val result = MelonEmulator.bootFirmware()
             if (result != MelonEmulator.FirmwareLoadResult.SUCCESS) {
                 cameraManager.stopCurrentCameraSource()
@@ -184,13 +186,13 @@ class AndroidEmulatorManager(
                 FirmwareLaunchResult.LaunchFailed(result)
             } else {
                 messageQueue.start()
-                if (!MelonEmulator.precompileVulkanPipelines()) {
+                if (!precompileVulkanPipelines(emulatorConfiguration)) {
                     cameraManager.stopCurrentCameraSource()
                     MelonEmulator.stopEmulation()
                     messageQueue.stop()
                     return@withContext FirmwareLaunchResult.LaunchFailed(MelonEmulator.FirmwareLoadResult.FIRMWARE_BAD)
                 }
-                MelonEmulator.startEmulation()
+                MelonEmulator.startEmulation(startPaused = true)
                 FirmwareLaunchResult.LaunchSuccessful
             }
         }
@@ -199,6 +201,25 @@ class AndroidEmulatorManager(
     override suspend fun updateRomEmulatorConfiguration(rom: Rom) {
         val configuration = getRomEmulatorConfiguration(rom)
         MelonEmulator.updateEmulatorConfiguration(configuration)
+    }
+
+    private fun precompileVulkanPipelines(configuration: EmulatorConfiguration): Boolean {
+        val retroShader = configuration.rendererConfiguration.retroArchShader
+        Log.i(
+            TAG,
+            "precompileVulkanPipelines: renderer=${configuration.rendererConfiguration.renderer} " +
+                "filter=${configuration.rendererConfiguration.videoFiltering} " +
+                "retroPreset=${retroShader.presetPath} " +
+                "retroSource=${retroShader.sourceResolution} " +
+                "retroPasses=${retroShader.passCount}",
+        )
+        return MelonEmulator.precompileVulkanPipelines(
+            videoFilteringOrdinal = configuration.rendererConfiguration.videoFiltering.ordinal,
+            retroShaderPresetPath = retroShader.presetPath,
+            retroShaderSourceResolution = retroShader.sourceResolution.name.lowercase(),
+            retroShaderPassCount = retroShader.passCount,
+            retroShaderParameterOverrides = retroShader.parameterOverrides,
+        )
     }
 
     override suspend fun updateFirmwareEmulatorConfiguration(consoleType: ConsoleType) {

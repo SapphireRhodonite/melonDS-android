@@ -70,6 +70,7 @@ import me.magnum.melonds.domain.model.DualScreenPreset
 import me.magnum.melonds.domain.model.FpsCounterPosition
 import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.SaveStateSlot
+import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.layout.ScreenFold
@@ -743,6 +744,9 @@ class EmulatorActivity : AppCompatActivity() {
                             binding.viewLayoutControls.isVisible = true
                             backPressedCallback.isEnabled = true
                             scheduleStartupPresentationRefreshes()
+                            if (!activeOverlays.hasActiveOverlays()) {
+                                viewModel.resumeEmulator()
+                            }
                         }
                         is EmulatorState.RomLoadError -> {
                             binding.viewLayoutControls.isInvisible = true
@@ -810,7 +814,13 @@ class EmulatorActivity : AppCompatActivity() {
             return
         }
 
-        binding.textLoading.setText(R.string.info_vulkan_compiling_title)
+        binding.textLoading.setText(
+            if (progress.stageId == 5) {
+                R.string.info_retroarch_compiling_title
+            } else {
+                R.string.info_vulkan_compiling_title
+            },
+        )
         binding.progressLoading.isVisible = true
         binding.progressLoading.isIndeterminate = true
         binding.textLoadingDetail.isVisible = true
@@ -823,6 +833,7 @@ class EmulatorActivity : AppCompatActivity() {
             2 -> R.string.info_vulkan_compiling_stage_pipelines
             3 -> R.string.info_vulkan_compiling_stage_output
             4 -> R.string.info_vulkan_compiling_stage_warmup
+            5 -> R.string.info_vulkan_compiling_stage_retroarch
             else -> R.string.info_vulkan_compiling_stage_init
         }
         return getString(labelRes)
@@ -1226,6 +1237,12 @@ class EmulatorActivity : AppCompatActivity() {
             bottomOnTop = bottomOnTop,
             backgroundMode = currentMainScreenBackground.mode,
             videoFiltering = rendererConfiguration.videoFiltering,
+            retroShaderEnabled = rendererConfiguration.videoFiltering == VideoFiltering.RETROARCH,
+            retroShaderPresetPath = rendererConfiguration.retroArchShader.presetPath,
+            retroShaderSourceResolution = rendererConfiguration.retroArchShader.sourceResolution.name.lowercase(),
+            retroShaderPassCount = rendererConfiguration.retroArchShader.passCount,
+            retroShaderParameterOverrides = rendererConfiguration.retroArchShader.parameterOverrides,
+            retroShaderClearHistory = rendererConfiguration.retroArchShader.clearHistory,
         )
     }
 

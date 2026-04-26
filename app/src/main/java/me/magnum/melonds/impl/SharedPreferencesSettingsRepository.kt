@@ -28,6 +28,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 import me.magnum.melonds.common.opengl.ShaderProgramSource
 import me.magnum.melonds.common.opengl.ShaderProgramSourceLoader
+import me.magnum.melonds.common.retroarch.RetroArchShaderPreset
 import me.magnum.melonds.common.uridelegates.UriHandler
 import me.magnum.melonds.domain.model.AudioBitrate
 import me.magnum.melonds.domain.model.AudioInterpolation
@@ -41,6 +42,8 @@ import me.magnum.melonds.domain.model.FpsCounterPosition
 import me.magnum.melonds.domain.model.MacAddress
 import me.magnum.melonds.domain.model.MicSource
 import me.magnum.melonds.domain.model.RendererConfiguration
+import me.magnum.melonds.domain.model.RetroArchShaderConfiguration
+import me.magnum.melonds.domain.model.RetroArchShaderSourceResolution
 import me.magnum.melonds.domain.model.RomIconFiltering
 import me.magnum.melonds.domain.model.SaveStateLocation
 import me.magnum.melonds.domain.model.ScreenAlignment
@@ -83,6 +86,13 @@ class SharedPreferencesSettingsRepository(
         private const val KEY_DUAL_SCREEN_EXTERNAL_FILL_WIDTH = "dual_screen_external_fill_width"
         private const val KEY_DUAL_SCREEN_INTERNAL_VERTICAL_ALIGNMENT = "dual_screen_internal_vertical_alignment"
         private const val KEY_DUAL_SCREEN_EXTERNAL_VERTICAL_ALIGNMENT = "dual_screen_external_vertical_alignment"
+        private val EmptyRetroArchShaderConfiguration = RetroArchShaderConfiguration(
+            presetPath = null,
+            sourceResolution = RetroArchShaderSourceResolution.VULKAN_IR,
+            passCount = 0,
+            parameterOverrides = emptyMap(),
+            clearHistory = false,
+        )
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -102,6 +112,12 @@ class SharedPreferencesSettingsRepository(
     private val preferenceSharedFlows = mutableMapOf<String, MutableSharedFlow<Unit>>()
     private val renderConfigurationFlow: SharedFlow<RendererConfiguration>
     @Volatile private var cachedCustomShader: Pair<Uri, ShaderProgramSourceLoader.Result>? = null
+    @Volatile private var cachedRetroArchShaderRoot: String? = null
+    @Volatile private var cachedRetroArchShaderImportKey: String? = null
+    private data class RetroArchPresetReferences(
+        val shaders: List<String>,
+        val textures: List<String>,
+    )
     private data class CoreRenderConfigurationInputs(
         val renderer: VideoRenderer,
         val filtering: VideoFiltering,
@@ -185,9 +201,16 @@ class SharedPreferencesSettingsRepository(
             RenderConfigurationInputs(core, coverageFix)
         }
 
-        renderConfigurationFlow = combine(renderInputsFlow, observeVideoCustomShader()) { renderInputs, customShaderUri ->
+        renderConfigurationFlow = combine(
+            renderInputsFlow,
+            observeVideoCustomShader(),
+            observeRetroArchShaderConfiguration(),
+        ) { renderInputs, customShaderUri, retroArchShader ->
             val effectiveFiltering = when {
                 renderInputs.core.renderer == VideoRenderer.VULKAN && !renderInputs.core.filtering.isSupportedByVulkan() -> VideoFiltering.NONE
+                renderInputs.core.renderer == VideoRenderer.VULKAN &&
+                    renderInputs.core.filtering == VideoFiltering.RETROARCH &&
+                    retroArchShader.presetPath.isNullOrBlank() -> VideoFiltering.NONE
                 renderInputs.core.renderer != VideoRenderer.VULKAN && !renderInputs.core.filtering.isSupportedByOpenGlSurface() -> VideoFiltering.NONE
                 else -> renderInputs.core.filtering
             }
@@ -212,6 +235,7 @@ class SharedPreferencesSettingsRepository(
                 renderInputs.coverageFix.applyClamp,
                 renderInputs.coverageFix.debugClearMagenta,
                 customShader,
+                if (effectiveFiltering == VideoFiltering.RETROARCH) retroArchShader else EmptyRetroArchShaderConfiguration,
             )
         }.conflate().shareIn(preferencesCoroutineScope, SharingStarted.Lazily, replay = 1)
     }
@@ -437,6 +461,273 @@ class SharedPreferencesSettingsRepository(
     private fun getVideoCustomShaderUri(): Uri? {
         val shaderPreference = preferences.getStringSet("video_custom_shader", null)?.firstOrNull()
         return shaderPreference?.toUri()
+    }
+
+    private fun observeRetroArchShaderConfiguration(): Flow<RetroArchShaderConfiguration> {
+        return combine(
+            observeRetroArchShaderRoot(),
+            observeRetroArchShaderPreset(),
+            observeRetroArchShaderParameters(),
+            observeRetroArchShaderClearHistory(),
+        ) { rootUri, presetRelativePath, parameters, clearHistory ->
+            importRetroArchShader(rootUri, presetRelativePath, parameters, clearHistory)
+        }
+    }
+
+    private fun observeRetroArchShaderRoot(): Flow<Uri?> {
+        return getOrCreatePreferenceSharedFlow("video_retroarch_shader_root") {
+            preferences.getStringSet("video_retroarch_shader_root", null)?.firstOrNull()?.toUri()
+        }
+    }
+
+    private fun observeRetroArchShaderPreset(): Flow<String?> {
+        return getOrCreatePreferenceSharedFlow("video_retroarch_shader_preset") {
+            preferences.getString("video_retroarch_shader_preset", null)
+        }
+    }
+
+    private fun observeRetroArchShaderParameters(): Flow<Map<String, Float>> {
+        return getOrCreatePreferenceSharedFlow("video_retroarch_shader_parameters") {
+            parseRetroArchShaderParameters(preferences.getString("video_retroarch_shader_parameters", null))
+        }
+    }
+
+    private fun observeRetroArchShaderClearHistory(): Flow<Boolean> {
+        return getOrCreatePreferenceSharedFlow("video_retroarch_shader_clear_history") {
+            preferences.getBoolean("video_retroarch_shader_clear_history", false)
+        }
+    }
+
+    private fun parseRetroArchShaderParameters(rawValue: String?): Map<String, Float> {
+        if (rawValue.isNullOrBlank()) {
+            return emptyMap()
+        }
+
+        return rawValue
+            .lineSequence()
+            .flatMap { it.split(',', ';').asSequence() }
+            .mapNotNull { entry ->
+                val parts = entry.split('=', limit = 2)
+                if (parts.size != 2) {
+                    return@mapNotNull null
+                }
+                val name = parts[0].trim()
+                val value = parts[1].trim().toFloatOrNull()
+                if (name.isBlank() || value == null) {
+                    null
+                } else {
+                    name to value
+                }
+            }
+            .toMap()
+    }
+
+    private fun importRetroArchShader(
+        rootUri: Uri?,
+        presetRelativePath: String?,
+        parameterOverrides: Map<String, Float>,
+        clearHistory: Boolean,
+    ): RetroArchShaderConfiguration {
+        val relativePath = normalizeRetroArchPresetPath(presetRelativePath) ?: return EmptyRetroArchShaderConfiguration
+        rootUri ?: return EmptyRetroArchShaderConfiguration
+
+        val importRoot = File(context.filesDir, "retroarch-shaders/current")
+        val rootDocument = DocumentFile.fromTreeUri(context, rootUri)
+        if (rootDocument == null || !rootDocument.exists() || !rootDocument.isDirectory) {
+            Log.w(TAG, "Invalid RetroArch shader root: $rootUri")
+            cachedRetroArchShaderRoot = null
+            cachedRetroArchShaderImportKey = null
+            return buildImportedRetroArchShaderConfiguration(
+                importRoot = importRoot,
+                relativePath = relativePath,
+                parameterOverrides = parameterOverrides,
+                clearHistory = clearHistory,
+            )
+        }
+
+        val rootCacheKey = rootUri.toString()
+        val importCacheKey = "$rootCacheKey\n$relativePath"
+        if (cachedRetroArchShaderRoot != rootCacheKey ||
+            cachedRetroArchShaderImportKey != importCacheKey ||
+            !importRoot.isDirectory
+        ) {
+            try {
+                importRoot.deleteRecursively()
+                importRoot.mkdirs()
+                copyRetroArchShaderPresetDependencies(rootDocument, relativePath, importRoot)
+                cachedRetroArchShaderRoot = rootCacheKey
+                cachedRetroArchShaderImportKey = importCacheKey
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to import RetroArch shader preset $relativePath from $rootUri", e)
+                cachedRetroArchShaderRoot = null
+                cachedRetroArchShaderImportKey = null
+                return EmptyRetroArchShaderConfiguration
+            }
+        }
+
+        val presetFile = File(importRoot, relativePath)
+        if (!presetFile.exists() || !presetFile.isFile) {
+            Log.w(TAG, "RetroArch shader preset not found after import: $relativePath")
+            return EmptyRetroArchShaderConfiguration
+        }
+
+        val escapedReference = findRetroArchPresetReferenceOutsideRoot(presetFile, importRoot)
+        if (escapedReference != null) {
+            Log.w(
+                TAG,
+                "RetroArch shader preset references files outside selected root: " +
+                    "$relativePath -> $escapedReference. Select the top-level slang-shaders folder.",
+            )
+            return EmptyRetroArchShaderConfiguration
+        }
+
+        return buildImportedRetroArchShaderConfiguration(
+            importRoot = importRoot,
+            relativePath = relativePath,
+            parameterOverrides = parameterOverrides,
+            clearHistory = clearHistory,
+        )
+    }
+
+    private fun buildImportedRetroArchShaderConfiguration(
+        importRoot: File,
+        relativePath: String,
+        parameterOverrides: Map<String, Float>,
+        clearHistory: Boolean,
+    ): RetroArchShaderConfiguration {
+        val presetFile = File(importRoot, relativePath)
+        if (!presetFile.exists() || !presetFile.isFile) {
+            Log.w(TAG, "RetroArch shader preset not available in import cache: $relativePath")
+            return EmptyRetroArchShaderConfiguration
+        }
+
+        val presetAssignments = RetroArchShaderPreset.parseAssignments(presetFile.readText())
+        val passCount = RetroArchShaderPreset.passCount(presetAssignments)
+        val sourceResolution = if (RetroArchShaderPreset.requiresNativeDsSource(relativePath) { shaderRelativePath ->
+                File(importRoot, shaderRelativePath).takeIf { it.isFile }?.readText()
+            }) {
+            RetroArchShaderSourceResolution.NATIVE
+        } else {
+            RetroArchShaderSourceResolution.VULKAN_IR
+        }
+
+        return RetroArchShaderConfiguration(
+            presetPath = presetFile.absolutePath,
+            sourceResolution = sourceResolution,
+            passCount = passCount,
+            parameterOverrides = parameterOverrides,
+            clearHistory = clearHistory,
+        )
+    }
+
+    private fun normalizeRetroArchPresetPath(rawPath: String?): String? {
+        val normalized = rawPath
+            ?.trim()
+            ?.replace('\\', '/')
+            ?.trimStart('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        if (normalized.split('/').any { it == ".." }) {
+            return null
+        }
+        return normalized.takeIf { it.endsWith(".slangp", ignoreCase = true) }
+    }
+
+    private fun findRetroArchPresetReferenceOutsideRoot(presetFile: File, root: File): String? {
+        val rootCanonical = root.canonicalFile
+        val references = parseRetroArchPresetReferences(presetFile).let { it.shaders + it.textures }
+
+        return references.firstOrNull { reference ->
+            val normalizedReference = reference.replace('\\', '/').trim()
+            if (normalizedReference.isBlank() || normalizedReference.startsWith('/')) {
+                false
+            } else {
+                val referencedFile = File(presetFile.parentFile, normalizedReference).canonicalFile
+                !referencedFile.startsWithDirectory(rootCanonical)
+            }
+        }
+    }
+
+    private fun parseRetroArchPresetReferences(presetFile: File): RetroArchPresetReferences {
+        val assignments = RetroArchShaderPreset.parseAssignments(presetFile.readText())
+
+        return RetroArchPresetReferences(
+            shaders = RetroArchShaderPreset.shaderReferences(assignments),
+            textures = RetroArchShaderPreset.textureReferences(assignments),
+        )
+    }
+
+    private fun parseRetroArchIncludeReferences(shaderFile: File): List<String> {
+        return RetroArchShaderPreset.includeReferences(shaderFile.readText())
+    }
+
+    private fun File.startsWithDirectory(directory: File): Boolean {
+        var current: File? = this
+        while (current != null) {
+            if (current == directory) {
+                return true
+            }
+            current = current.parentFile
+        }
+        return false
+    }
+
+    private fun copyRetroArchShaderPresetDependencies(root: DocumentFile, presetRelativePath: String, destination: File) {
+        val pending = ArrayDeque<String>()
+        val copied = mutableSetOf<String>()
+        pending.add(presetRelativePath)
+
+        while (pending.isNotEmpty()) {
+            val relativePath = pending.removeFirst()
+            if (!copied.add(relativePath)) {
+                continue
+            }
+
+            val source = findDocumentFile(root, relativePath)
+                ?: throw IllegalArgumentException("RetroArch shader dependency not found: $relativePath")
+            if (!source.isFile) {
+                throw IllegalArgumentException("RetroArch shader dependency is not a file: $relativePath")
+            }
+
+            val target = File(destination, relativePath)
+            target.parentFile?.mkdirs()
+            context.contentResolver.openInputStream(source.uri)?.use { input ->
+                target.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw IllegalArgumentException("Unable to open RetroArch shader dependency: $relativePath")
+
+            when (target.extension.lowercase()) {
+                "slangp" -> {
+                    val presetReferences = parseRetroArchPresetReferences(target)
+                    (presetReferences.shaders + presetReferences.textures).forEach { reference ->
+                        pending.add(resolveRetroArchRelativePath(relativePath, reference))
+                    }
+                }
+                "slang", "inc", "h", "glsl" -> {
+                    parseRetroArchIncludeReferences(target).forEach { reference ->
+                        pending.add(resolveRetroArchRelativePath(relativePath, reference))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun findDocumentFile(root: DocumentFile, relativePath: String): DocumentFile? {
+        var current = root
+        relativePath.split('/').forEach { segment ->
+            if (segment.isBlank()) {
+                return null
+            }
+            current = current.findFile(segment) ?: return null
+        }
+        return current
+    }
+
+    private fun resolveRetroArchRelativePath(baseRelativePath: String, rawReference: String): String {
+        return RetroArchShaderPreset.resolveRelativePath(baseRelativePath, rawReference)
+            ?: throw IllegalArgumentException("Unsupported RetroArch shader dependency path: $rawReference")
     }
 
     private fun loadCustomShader(uri: Uri?): ShaderProgramSource? {

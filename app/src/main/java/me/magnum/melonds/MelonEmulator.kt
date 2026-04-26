@@ -96,8 +96,14 @@ object MelonEmulator {
 
     private external fun bootFirmwareInternal(): Int
 
-	external fun startEmulation()
-    external fun precompileVulkanPipelines(): Boolean
+	external fun startEmulation(startPaused: Boolean)
+    external fun precompileVulkanPipelines(
+        videoFilteringOrdinal: Int,
+        retroShaderPresetPath: String?,
+        retroShaderSourceResolution: String,
+        retroShaderPassCount: Int,
+        retroShaderParameterOverrides: Map<String, Float>,
+    ): Boolean
 
     external fun presentFrame(deadlineNs: Long, frameRenderCallback: FrameRenderCallback)
     external fun attachVulkanSurface(surface: Surface, width: Int, height: Int): Int

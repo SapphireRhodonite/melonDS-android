@@ -12,6 +12,19 @@ endif()
 
 set(CORE_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../melonDS-android-lib")
 set(VULKAN_SPIRV_REGEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/regenerate_vulkan_spirv.sh")
+set(LIBRASHADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/generated/librashader")
+set(LIBRASHADER_INCLUDE_DIR "${LIBRASHADER_ROOT}/include")
+set(LIBRASHADER_LIBRARY "${LIBRASHADER_ROOT}/jniLibs/${ANDROID_ABI}/liblibrashader.so")
+
+if (NOT EXISTS "${LIBRASHADER_INCLUDE_DIR}/librashader.h" OR NOT EXISTS "${LIBRASHADER_LIBRARY}")
+    message(FATAL_ERROR "librashader artifacts are missing. Run ./gradlew :app:buildLibrashaderAndroid first; Gradle builds the pinned source with Rust/cargo and the Android NDK.")
+endif()
+
+add_library(librashader SHARED IMPORTED GLOBAL)
+set_target_properties(librashader PROPERTIES
+        IMPORTED_LOCATION "${LIBRASHADER_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${LIBRASHADER_INCLUDE_DIR}")
+add_compile_definitions(MELONDS_HAS_LIBRASHADER=1)
 
 set(VULKAN_SHADER_SOURCES
         "${CORE_LIB_DIR}/src/GPU3D_Vulkan_InterpSpansShader.comp"
@@ -101,3 +114,4 @@ find_library(vulkan-lib vulkan)
 find_library(jnigraphics-lib jnigraphics)
 target_link_libraries(melonDS-android-frontend ${vulkan-lib})
 target_link_libraries(melonDS-android-frontend ${jnigraphics-lib})
+target_link_libraries(melonDS-android-frontend librashader)

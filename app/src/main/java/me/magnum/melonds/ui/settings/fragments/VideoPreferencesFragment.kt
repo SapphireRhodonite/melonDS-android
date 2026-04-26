@@ -1,12 +1,19 @@
 package me.magnum.melonds.ui.settings.fragments
 
 import android.app.ActivityManager
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.core.net.toUri
 import androidx.core.content.getSystemService
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.lifecycleScope
+import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.SwitchPreference
 import dagger.hilt.android.AndroidEntryPoint
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.MelonDSAndroidInterface
@@ -23,14 +30,22 @@ import me.magnum.melonds.domain.model.defaultInternalAlignment
 import me.magnum.melonds.ui.settings.PreferenceFragmentHelper
 import me.magnum.melonds.ui.settings.PreferenceFragmentTitleProvider
 import me.magnum.melonds.ui.settings.preferences.StoragePickerPreference
+import me.magnum.melonds.extensions.addOnPreferenceChangeListener
 import me.magnum.melonds.utils.enumValueOfIgnoreCase
 import androidx.appcompat.app.AlertDialog
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.isVisible
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -52,6 +67,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private val coverageFixPreferences = mutableListOf<Preference>()
 
     private lateinit var dualScreenPresetsPreference: Preference
+    private var retroArchPresetScanJob: Job? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_video, rootKey)
@@ -89,6 +105,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         val dsiCameraSourcePreference = findPreference<ListPreference>("dsi_camera_source")!!
         val dsiCameraImagePreference = findPreference<StoragePickerPreference>("dsi_camera_static_image")!!
         val customShaderPreference = findPreference<StoragePickerPreference>("video_custom_shader")!!
+        val retroArchShaderRootPreference = findPreference<StoragePickerPreference>("video_retroarch_shader_root")!!
+        val retroArchShaderPresetPreference = findPreference<ListPreference>("video_retroarch_shader_preset")!!
+        val retroArchShaderParametersPreference = findPreference<EditTextPreference>("video_retroarch_shader_parameters")!!
+        val retroArchShaderClearHistoryPreference = findPreference<SwitchPreference>("video_retroarch_shader_clear_history")!!
         dualScreenPresetsPreference = findPreference("dual_screen_presets")!!
         val allFilteringValues = resources.getStringArray(R.array.video_filtering_values)
         val allFilteringEntries = resources.getStringArray(R.array.video_filtering_options)
@@ -125,6 +145,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     rendererValue = rendererValue,
                     videoFilteringPreference = videoFilteringPreference,
                     customShaderPreference = customShaderPreference,
+                    retroArchShaderRootPreference = retroArchShaderRootPreference,
+                    retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+                    retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+                    retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
                     allFilteringValues = allFilteringValues,
                     allFilteringEntries = allFilteringEntries,
                 )
@@ -144,18 +168,40 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
 
         helper.setupStoragePickerPreference(dsiCameraImagePreference)
         helper.setupStoragePickerPreference(customShaderPreference)
+        helper.setupStoragePickerPreference(retroArchShaderRootPreference)
+        helper.bindPreferenceSummaryToValue(retroArchShaderPresetPreference)
+        helper.bindPreferenceSummaryToValue(retroArchShaderParametersPreference)
+        retroArchShaderRootPreference.addOnPreferenceChangeListener { _, newValue ->
+            val rootUri = (newValue as? Set<*>)
+                ?.firstOrNull()
+                ?.let { it as? String }
+                ?.toUri()
+            updateRetroArchPresetEntries(retroArchShaderPresetPreference, rootUri)
+            true
+        }
+        updateRetroArchPresetEntries(retroArchShaderPresetPreference)
 
         updateFilteringPreferences(
             renderer = enumValueOfIgnoreCase(rendererPreference.value),
             videoFilteringPreference = videoFilteringPreference,
             customShaderPreference = customShaderPreference,
+            retroArchShaderRootPreference = retroArchShaderRootPreference,
+            retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+            retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+            retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
             allFilteringValues = allFilteringValues,
             allFilteringEntries = allFilteringEntries,
         )
         videoFilteringPreference.setOnPreferenceChangeListener { _, newValue ->
-            customShaderPreference.isEnabled =
-                enumValueOfIgnoreCase<VideoRenderer>(rendererPreference.value) != VideoRenderer.VULKAN &&
-                    (newValue as String) == "custom"
+            updateShaderPickerPreferences(
+                renderer = enumValueOfIgnoreCase(rendererPreference.value),
+                filteringValue = newValue as String,
+                customShaderPreference = customShaderPreference,
+                retroArchShaderRootPreference = retroArchShaderRootPreference,
+                retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+                retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+                retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
+            )
             true
         }
 
@@ -163,6 +209,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             rendererValue = rendererPreference.value,
             videoFilteringPreference = videoFilteringPreference,
             customShaderPreference = customShaderPreference,
+            retroArchShaderRootPreference = retroArchShaderRootPreference,
+            retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+            retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+            retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
             allFilteringValues = allFilteringValues,
             allFilteringEntries = allFilteringEntries,
         )
@@ -170,10 +220,206 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         updateDualScreenPresetSummary()
     }
 
+    override fun onDisplayPreferenceDialog(preference: Preference) {
+        if (preference.key == "video_retroarch_shader_preset") {
+            showRetroArchPresetBrowserDialog(preference as ListPreference)
+            return
+        }
+
+        super.onDisplayPreferenceDialog(preference)
+    }
+
+    private fun updateRetroArchPresetEntries(preference: ListPreference, rootUriOverride: Uri? = null) {
+        val rootUri = rootUriOverride ?: preferenceManager.sharedPreferences
+            ?.getStringSet("video_retroarch_shader_root", null)
+            ?.firstOrNull()
+            ?.toUri()
+
+        retroArchPresetScanJob?.cancel()
+        if (rootUriOverride != null) {
+            preference.value = null
+        }
+
+        val selectedPreset = preference.value
+        preference.entries = selectedPreset?.let { arrayOf(it) } ?: emptyArray()
+        preference.entryValues = selectedPreset?.let { arrayOf(it) } ?: emptyArray()
+        preference.summary = selectedPreset ?: getString(R.string.video_retroarch_shader_preset_summary)
+
+        if (rootUri == null) {
+            return
+        }
+    }
+
+    private fun showRetroArchPresetBrowserDialog(preference: ListPreference) {
+        val rootUri = preferenceManager.sharedPreferences
+            ?.getStringSet("video_retroarch_shader_root", null)
+            ?.firstOrNull()
+            ?.toUri()
+
+        if (rootUri == null) {
+            preference.summary = getString(R.string.video_retroarch_shader_preset_summary)
+            return
+        }
+
+        val context = requireContext()
+        val density = resources.displayMetrics.density
+        data class BrowserItem(
+            val label: String,
+            val path: String,
+            val isDirectory: Boolean,
+        )
+
+        var currentDirectory = ""
+        val browserItems = mutableListOf<BrowserItem>()
+        val itemLabels = mutableListOf<String>()
+        val folderCache = mutableMapOf<String, List<BrowserItem>>()
+        val adapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, itemLabels)
+        val pathTextView = TextView(context)
+        val listView = ListView(context).apply {
+            this.adapter = adapter
+            clipToPadding = false
+            setPadding(0, 0, 0, (72 * density).toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (360 * density).toInt(),
+            )
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                (24 * density).toInt(),
+                (12 * density).toInt(),
+                (24 * density).toInt(),
+                0,
+            )
+            addView(
+                pathTextView,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(listView)
+        }
+
+        fun applyItems(items: List<BrowserItem>) {
+            pathTextView.text = if (currentDirectory.isBlank()) "/" else "/$currentDirectory"
+            browserItems.clear()
+            browserItems += items
+            itemLabels.clear()
+            itemLabels += items.map { it.label }
+            adapter.notifyDataSetChanged()
+        }
+
+        fun resolveDocument(root: DocumentFile, relativePath: String): DocumentFile? {
+            var current = root
+            if (relativePath.isBlank()) {
+                return current
+            }
+
+            relativePath.split('/').forEach { segment ->
+                if (segment.isBlank()) {
+                    return null
+                }
+                current = current.findFile(segment) ?: return null
+            }
+            return current
+        }
+
+        fun loadDirectory(relativePath: String) {
+            retroArchPresetScanJob?.cancel()
+            currentDirectory = relativePath
+            applyItems(listOf(BrowserItem(getString(R.string.info_loading), relativePath, true)))
+
+            val cachedItems = folderCache[relativePath]
+            if (cachedItems != null) {
+                applyItems(cachedItems)
+                return
+            }
+
+            retroArchPresetScanJob = lifecycleScope.launch {
+                val loadedItems = withContext(Dispatchers.IO) {
+                    val rootDocument = DocumentFile.fromTreeUri(context, rootUri)
+                    val directory = rootDocument?.let { resolveDocument(it, relativePath) }
+                    if (directory?.isDirectory != true) {
+                        emptyList()
+                    } else {
+                        val directories = mutableListOf<Pair<String, String>>()
+                        val files = mutableListOf<Pair<String, String>>()
+                        directory.listFiles().forEach { child ->
+                            val name = child.name ?: return@forEach
+                            val childPath = if (relativePath.isBlank()) name else "$relativePath/$name"
+                            when {
+                                child.isDirectory -> directories += name to childPath
+                                child.isFile && name.endsWith(".slangp", ignoreCase = true) -> files += name to childPath
+                            }
+                        }
+
+                        buildList {
+                            if (relativePath.isNotBlank()) {
+                                add(
+                                    BrowserItem(
+                                        "..",
+                                        relativePath.substringBeforeLast('/', missingDelimiterValue = ""),
+                                        true,
+                                    ),
+                                )
+                            }
+                            directories.sortedBy { it.first.lowercase() }.forEach { (name, childPath) ->
+                                add(BrowserItem("📁 $name", childPath, true))
+                            }
+                            files.sortedBy { it.first.lowercase() }.forEach { (name, childPath) ->
+                                val selectedMark = if (childPath == preference.value) "* " else ""
+                                add(BrowserItem("$selectedMark$name", childPath, false))
+                            }
+                        }
+                    }
+                }
+
+                folderCache[relativePath] = loadedItems
+                applyItems(loadedItems)
+            }
+        }
+
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(preference.title)
+            .setView(container)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val item = browserItems.getOrNull(position) ?: return@setOnItemClickListener
+            if (item.isDirectory) {
+                if (item.label == getString(R.string.info_loading)) {
+                    return@setOnItemClickListener
+                }
+                loadDirectory(item.path)
+                return@setOnItemClickListener
+            }
+
+            val selectedPreset = item.path
+            applyRetroArchPresetSelection(preference, selectedPreset)
+            dialog.dismiss()
+        }
+
+        dialog.setOnShowListener {
+            loadDirectory("")
+        }
+        dialog.setOnDismissListener {
+            retroArchPresetScanJob?.cancel()
+            retroArchPresetScanJob = null
+        }
+        dialog.show()
+    }
+
     private fun onRendererPreferenceChanged(
         rendererValue: String,
         videoFilteringPreference: ListPreference,
         customShaderPreference: StoragePickerPreference,
+        retroArchShaderRootPreference: StoragePickerPreference,
+        retroArchShaderPresetPreference: ListPreference,
+        retroArchShaderParametersPreference: EditTextPreference,
+        retroArchShaderClearHistoryPreference: SwitchPreference,
         allFilteringValues: Array<String>,
         allFilteringEntries: Array<String>,
     ) {
@@ -236,6 +482,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             renderer = newRenderer,
             videoFilteringPreference = videoFilteringPreference,
             customShaderPreference = customShaderPreference,
+            retroArchShaderRootPreference = retroArchShaderRootPreference,
+            retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+            retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+            retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
             allFilteringValues = allFilteringValues,
             allFilteringEntries = allFilteringEntries,
         )
@@ -245,6 +495,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         renderer: VideoRenderer,
         videoFilteringPreference: ListPreference,
         customShaderPreference: StoragePickerPreference,
+        retroArchShaderRootPreference: StoragePickerPreference,
+        retroArchShaderPresetPreference: ListPreference,
+        retroArchShaderParametersPreference: EditTextPreference,
+        retroArchShaderClearHistoryPreference: SwitchPreference,
         allFilteringValues: Array<String>,
         allFilteringEntries: Array<String>,
     ) {
@@ -268,8 +522,41 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             videoFilteringPreference.value = VideoFiltering.NONE.name.lowercase()
         }
 
-        customShaderPreference.isEnabled =
-            renderer != VideoRenderer.VULKAN && videoFilteringPreference.value == VideoFiltering.CUSTOM.name.lowercase()
+        updateShaderPickerPreferences(
+            renderer = renderer,
+            filteringValue = videoFilteringPreference.value,
+            customShaderPreference = customShaderPreference,
+            retroArchShaderRootPreference = retroArchShaderRootPreference,
+            retroArchShaderPresetPreference = retroArchShaderPresetPreference,
+            retroArchShaderParametersPreference = retroArchShaderParametersPreference,
+            retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
+        )
+    }
+
+    private fun updateShaderPickerPreferences(
+        renderer: VideoRenderer,
+        filteringValue: String,
+        customShaderPreference: StoragePickerPreference,
+        retroArchShaderRootPreference: StoragePickerPreference,
+        retroArchShaderPresetPreference: ListPreference,
+        retroArchShaderParametersPreference: EditTextPreference,
+        retroArchShaderClearHistoryPreference: SwitchPreference,
+    ) {
+        val filtering = enumValueOfIgnoreCase<VideoFiltering>(filteringValue)
+        val customEnabled = renderer != VideoRenderer.VULKAN && filtering == VideoFiltering.CUSTOM
+        val retroArchEnabled = renderer == VideoRenderer.VULKAN && filtering == VideoFiltering.RETROARCH
+        customShaderPreference.isEnabled = customEnabled
+        retroArchShaderRootPreference.isEnabled = retroArchEnabled
+        retroArchShaderPresetPreference.isEnabled = retroArchEnabled
+        retroArchShaderParametersPreference.isEnabled = retroArchEnabled
+        retroArchShaderClearHistoryPreference.isEnabled = retroArchEnabled
+    }
+
+    private fun applyRetroArchPresetSelection(preference: ListPreference, selectedPreset: String) {
+        preference.value = selectedPreset
+        preference.entries = arrayOf(selectedPreset)
+        preference.entryValues = arrayOf(selectedPreset)
+        preference.summary = selectedPreset
     }
 
     private fun showVulkanUnavailableDialog() {

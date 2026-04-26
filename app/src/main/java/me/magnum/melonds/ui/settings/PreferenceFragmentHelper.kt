@@ -35,7 +35,9 @@ class PreferenceFragmentHelper(
                 is ListPreference -> {
                     // For list preferences, look up the correct display value in
                     // the preference's 'entries' list.
-                    val index = preference.findIndexOfValue(value.toString())
+                    val index = (value as? String)
+                        ?.let { preference.findIndexOfValue(it) }
+                        ?: -1
 
                     // Set the summary to reflect the new value.
                     val summary = if (index >= 0)
@@ -67,7 +69,7 @@ class PreferenceFragmentHelper(
                 else -> {
                     // For all other preferences, set the summary to the value's
                     // simple string representation.
-                    preference.summary = value.toString()
+                    preference.summary = value?.toString() ?: preference.context.getString(R.string.not_set)
                 }
             }
             true
@@ -130,7 +132,7 @@ class PreferenceFragmentHelper(
                 (newValue as? Set<String>)?.forEach {
                     uriPermissionManager.persistDirectoryPermissions(it.toUri(), storagePreference.permissions)
                 }
-                false
+                true
             }
         }
     }

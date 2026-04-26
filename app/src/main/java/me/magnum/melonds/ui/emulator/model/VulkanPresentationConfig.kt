@@ -15,4 +15,10 @@ data class VulkanPresentationConfig(
     val bottomOnTop: Boolean,
     val backgroundMode: BackgroundMode,
     val videoFiltering: VideoFiltering,
+    val retroShaderEnabled: Boolean,
+    val retroShaderPresetPath: String?,
+    val retroShaderSourceResolution: String,
+    val retroShaderPassCount: Int,
+    val retroShaderParameterOverrides: Map<String, Float>,
+    val retroShaderClearHistory: Boolean,
 )

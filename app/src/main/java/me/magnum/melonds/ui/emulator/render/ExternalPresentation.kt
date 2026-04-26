@@ -15,6 +15,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import me.magnum.melonds.domain.model.RuntimeBackground
+import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.ui.emulator.DSRenderer
@@ -191,6 +192,12 @@ class ExternalPresentation(
             bottomOnTop = bottomOnTop,
             backgroundMode = currentBackground?.mode ?: RuntimeBackground.None.mode,
             videoFiltering = rendererConfiguration.videoFiltering,
+            retroShaderEnabled = rendererConfiguration.videoFiltering == VideoFiltering.RETROARCH,
+            retroShaderPresetPath = rendererConfiguration.retroArchShader.presetPath,
+            retroShaderSourceResolution = rendererConfiguration.retroArchShader.sourceResolution.name.lowercase(),
+            retroShaderPassCount = rendererConfiguration.retroArchShader.passCount,
+            retroShaderParameterOverrides = rendererConfiguration.retroArchShader.parameterOverrides,
+            retroShaderClearHistory = rendererConfiguration.retroArchShader.clearHistory,
         )
     }
 

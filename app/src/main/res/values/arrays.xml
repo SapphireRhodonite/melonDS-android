@@ -57,6 +57,7 @@
         <item>lcd</item>
         <item>lcd_grid_dslite</item>
         <item>scanlines</item>
+        <item>retroarch</item>
         <item>custom</item>
     </string-array>
 

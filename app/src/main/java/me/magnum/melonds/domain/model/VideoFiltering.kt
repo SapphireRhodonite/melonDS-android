@@ -14,6 +14,7 @@ enum class VideoFiltering {
     LCD,
     LCD_GRID_DSLITE,
     SCANLINES,
+    RETROARCH,
     CUSTOM;
 
     fun isSupportedByVulkan(): Boolean {
@@ -21,6 +22,6 @@ enum class VideoFiltering {
     }
 
     fun isSupportedByOpenGlSurface(): Boolean {
-        return this != SHARP_2D
+        return this != SHARP_2D && this != RETROARCH
     }
 }

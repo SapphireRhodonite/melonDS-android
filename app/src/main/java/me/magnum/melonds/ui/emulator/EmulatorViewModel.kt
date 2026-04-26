@@ -869,6 +869,10 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun resumeEmulator() {
+        if (!_emulatorState.value.isRunning()) {
+            return
+        }
+
         sessionCoroutineScope.launch {
             emulatorManager.resumeEmulator()
         }
@@ -1694,6 +1698,7 @@ class EmulatorViewModel @Inject constructor(
                     videoFiltering = it.videoFiltering,
                     resolutionScaling = it.resolutionScaling,
                     customShader = it.customShader,
+                    retroArchShader = it.retroArchShader,
                 )
             }
         }
