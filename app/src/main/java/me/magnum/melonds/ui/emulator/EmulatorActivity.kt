@@ -21,7 +21,6 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.RelativeLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -45,6 +44,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isGone
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.DEFAULT_ARGS_KEY
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -72,6 +72,7 @@ import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.domain.model.layout.Insets
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.layout.ScreenFold
 import me.magnum.melonds.domain.model.rom.Rom
@@ -334,14 +335,15 @@ class EmulatorActivity : AppCompatActivity() {
         supportRequestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(binding.root)
         setupFullscreen()
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(
-                insets.left,
-                insets.top,
-                insets.right,
-                insets.bottom,
-            )
+            binding.listRewind.setPadding(insets.left, 0, insets.right, insets.bottom)
+            binding.textFps.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                setMargins(insets.left, insets.top, insets.right, insets.bottom)
+            }
+
+            val uiInsets = Insets(insets.left, insets.top, insets.right, insets.bottom)
+            viewModel.setUiInsets(uiInsets)
 
             WindowInsetsCompat.CONSUMED
         }
@@ -1051,7 +1053,7 @@ class EmulatorActivity : AppCompatActivity() {
             binding.textFps.isGone = true
         } else {
             binding.textFps.isVisible = true
-            val newParams = ConstraintLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT)
+            val newParams = binding.textFps.layoutParams as ConstraintLayout.LayoutParams
             when (fpsCounterPosition) {
                 FpsCounterPosition.TOP_LEFT -> {
                     newParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID

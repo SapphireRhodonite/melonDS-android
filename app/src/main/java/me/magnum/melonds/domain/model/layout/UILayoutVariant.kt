@@ -5,6 +5,7 @@ import me.magnum.melonds.domain.model.ui.Orientation
 
 data class UILayoutVariant(
     val uiSize: Point,
+    val uiInsets: Insets,
     val orientation: Orientation,
     val folds: List<ScreenFold>,
     val displays: LayoutDisplayPair,

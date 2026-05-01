@@ -6,9 +6,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import me.magnum.melonds.domain.model.Point
+import me.magnum.melonds.domain.model.Rect
+import me.magnum.melonds.domain.model.layout.Insets
 import me.magnum.melonds.domain.model.layout.LayoutConfiguration
 import me.magnum.melonds.domain.model.layout.LayoutDisplayPair
 import me.magnum.melonds.domain.model.layout.ScreenFold
+import me.magnum.melonds.domain.model.layout.ScreenLayout
 import me.magnum.melonds.domain.model.layout.UILayout
 import me.magnum.melonds.domain.model.layout.UILayoutVariant
 import me.magnum.melonds.domain.model.ui.Orientation
@@ -18,15 +21,16 @@ import kotlin.time.Duration.Companion.milliseconds
 class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider) {
 
     private val currentUiSize = MutableStateFlow<Point?>(null)
+    private val currentUiInsets = MutableStateFlow<Insets?>(null)
     private val currentOrientation = MutableStateFlow<Orientation?>(null)
     private val currentFolds = MutableStateFlow<List<ScreenFold>?>(null)
     private val currentDisplays = MutableStateFlow<LayoutDisplayPair?>(null)
 
-    private val currentLayoutVariant = combine(currentUiSize, currentOrientation, currentFolds, currentDisplays) { size, orientation, folds, displays ->
-        if (size == null || orientation == null || folds == null || displays == null) {
+    private val currentLayoutVariant = combine(currentUiSize, currentUiInsets, currentOrientation, currentFolds, currentDisplays) { size, insets, orientation, folds, displays ->
+        if (size == null || insets == null || orientation == null || folds == null || displays == null) {
             null
         } else {
-            UILayoutVariant(size, orientation, folds, displays)
+            UILayoutVariant(size, insets, orientation, folds, displays)
         }
     }.distinctUntilChanged().debounce(50.milliseconds)
 
@@ -46,6 +50,10 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
 
     fun updateUiSize(width: Int, height: Int) {
         currentUiSize.value = Point(width, height)
+    }
+
+    fun updateUiInsets(insets: Insets) {
+        currentUiInsets.value = insets
     }
 
     fun updateFolds(folds: List<ScreenFold>) {
@@ -94,7 +102,7 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
             } else {
                 layout.secondaryScreenLayout
             }
-            return UILayout(mainScreenLayout, secondaryScreenLayout)
+            UILayout(mainScreenLayout, secondaryScreenLayout)
         } else {
             layout
         }
@@ -171,6 +179,63 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
         val bestVariant = layoutConfiguration.layoutVariants.entries.firstOrNull {
             it.key.orientation == variant.orientation && it.key.uiSize == variant.uiSize
         }
-        return bestVariant?.value
+        if (bestVariant != null) {
+            if (bestVariant.key.uiInsets == variant.uiInsets) {
+                return bestVariant.value
+            }
+
+            // If insets don't match, check if they are rotated 180º
+            val rotatedInsets = with(bestVariant.key.uiInsets) {
+                Insets(left = right, top = bottom, right = left, bottom = top)
+            }
+            if (rotatedInsets == variant.uiInsets) {
+                val layoutBounds = getLayoutBoundingRect(bestVariant.value.mainScreenLayout)
+                if (layoutBounds == null) {
+                    // Layout has no components. Use it just for the background
+                    return bestVariant.value
+                }
+
+                val safeUiWidth = bestVariant.key.uiSize.x - (bestVariant.key.uiInsets.left + bestVariant.key.uiInsets.right)
+                val safeUiHeight = bestVariant.key.uiSize.y - (bestVariant.key.uiInsets.top + bestVariant.key.uiInsets.bottom)
+                val safeUiBounds = Rect(bestVariant.key.uiInsets.left, bestVariant.key.uiInsets.top, safeUiWidth, safeUiHeight)
+                // Check if the layout fits inside the safe UI bounds
+                if (safeUiBounds.contains(layoutBounds)) {
+                    // Offset components to adjust to new UI insets
+                    val offset = -bestVariant.key.uiInsets.left + bestVariant.key.uiInsets.right
+                    val offsetComponents = bestVariant.value.mainScreenLayout.components?.map {
+                        it.copy(rect = it.rect.copy(x = it.rect.x + offset))
+                    }
+
+                    return bestVariant.value.copy(mainScreenLayout = bestVariant.value.mainScreenLayout.copy(components = offsetComponents))
+                } else {
+                    // Layout components extend into the UI insets. Use it anyway as is since the customization could be important to the user
+                    return bestVariant.value
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun getLayoutBoundingRect(layout: ScreenLayout): Rect? {
+        if (layout.components.isNullOrEmpty()) {
+            return null
+        }
+
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var maxX = 0
+        var maxY = 0
+
+        layout.components.forEach {
+            minX = minOf(minX, it.rect.x)
+            minY = minOf(minY, it.rect.y)
+            maxX = maxOf(maxX, it.rect.right)
+            maxY = maxOf(maxY, it.rect.bottom)
+        }
+
+        val boundsWidth = maxX - minX
+        val boundsHeight = maxY - minY
+        return Rect(minX, minY, boundsWidth, boundsHeight)
     }
 }

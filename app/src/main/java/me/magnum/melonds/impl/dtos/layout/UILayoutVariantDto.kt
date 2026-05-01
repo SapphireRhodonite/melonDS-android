@@ -6,6 +6,8 @@ import me.magnum.melonds.domain.model.layout.UILayoutVariant
 data class UILayoutVariantDto(
     @SerializedName("uiSize")
     val uiSize: PointDto,
+    @SerializedName("insets")
+    val insets: InsetsDto,
     @SerializedName("orientation")
     val orientation: String,
     @SerializedName("folds")
@@ -17,6 +19,7 @@ data class UILayoutVariantDto(
     fun toModel(): UILayoutVariant {
         return UILayoutVariant(
             uiSize.toModel(),
+            insets.toModel(),
             enumValueOf(orientation),
             folds.map {
                 it.toModel()
@@ -29,6 +32,7 @@ data class UILayoutVariantDto(
         fun fromModel(uiLayoutVariant: UILayoutVariant): UILayoutVariantDto {
             return UILayoutVariantDto(
                 PointDto.fromModel(uiLayoutVariant.uiSize),
+                InsetsDto.fromModel(uiLayoutVariant.uiInsets),
                 uiLayoutVariant.orientation.name,
                 uiLayoutVariant.folds.map {
                     ScreenFoldDto.fromModel(it)

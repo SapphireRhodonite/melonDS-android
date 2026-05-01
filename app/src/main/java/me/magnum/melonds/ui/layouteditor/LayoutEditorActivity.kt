@@ -28,6 +28,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import me.magnum.melonds.R
 import me.magnum.melonds.domain.model.Rect
+import me.magnum.melonds.domain.model.layout.Insets
 import me.magnum.melonds.domain.model.layout.ScreenFold
 import me.magnum.melonds.domain.model.ui.Orientation
 import me.magnum.melonds.extensions.insetsControllerCompat
@@ -45,7 +46,6 @@ import javax.inject.Inject
 class LayoutEditorActivity : AppCompatActivity() {
     companion object {
         const val KEY_LAYOUT_ID = "layout_id"
-        const val KEY_IS_EXTERNAL = "is_external"
     }
 
     enum class MenuOption(@field:StringRes val stringRes: Int) {
@@ -142,16 +142,14 @@ class LayoutEditorActivity : AppCompatActivity() {
         }
         container.addView(layoutEditorManager, RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT)
         setContentView(container)
-        ViewCompat.setOnApplyWindowInsetsListener(container) { view, windowInsets ->
+        ViewCompat.setOnApplyWindowInsetsListener(container) { _, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(
-                insets.left,
-                insets.top,
-                insets.right,
-                insets.bottom,
-            )
+            val uiInsets = Insets(insets.left, insets.top, insets.right, insets.bottom)
+            storeLayoutChanges()
+            viewModel.setUiInsets(uiInsets)
 
-            WindowInsetsCompat.CONSUMED
+            // Do not consume insets here
+            windowInsets
         }
 
         onBackPressedDispatcher.addCallback(object : OnBackPressedCallback(true) {

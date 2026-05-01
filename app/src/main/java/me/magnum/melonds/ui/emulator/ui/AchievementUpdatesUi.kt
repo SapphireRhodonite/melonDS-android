@@ -4,6 +4,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.wrapContentSize
@@ -62,7 +63,7 @@ fun AchievementUpdatesUi(
         merge(achievementsFlow, integrationFlow)
     }
 
-    Box(Modifier.fillMaxWidth()) {
+    Box(Modifier.fillMaxWidth().displayCutoutPadding()) {
         AchievementUpdatesList(
             modifier = Modifier.align(Alignment.TopStart).wrapContentSize(),
             achievementEventFlow = viewModel.achievementsEvent,

@@ -229,8 +229,8 @@ object MelonModule {
 
     @Provides
     @Singleton
-    fun provideDefaultLayoutBuilder(screenUnitsConverter: ScreenUnitsConverter): DefaultLayoutProvider {
-        return DefaultLayoutProvider(screenUnitsConverter)
+    fun provideDefaultLayoutBuilder(@ApplicationContext context: Context, screenUnitsConverter: ScreenUnitsConverter): DefaultLayoutProvider {
+        return DefaultLayoutProvider(context, screenUnitsConverter)
     }
 
     @Provides
