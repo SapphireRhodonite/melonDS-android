@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 internal data class UserLoginDto(
+    @SerialName("User")
+    val user: String,
     @SerialName("Token")
     val token: String,
     @SerialName("Score")

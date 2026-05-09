@@ -92,7 +92,7 @@ class RAApi(
                 PARAMETER_PASSWORD to password,
             )
         ).onSuccess {
-            userAuthStore.storeUserAuth(RAUserAuth.Authenticated(username, it.token))
+            userAuthStore.storeUserAuth(RAUserAuth.Authenticated(it.user, it.token))
         }.map { }
     }
 
