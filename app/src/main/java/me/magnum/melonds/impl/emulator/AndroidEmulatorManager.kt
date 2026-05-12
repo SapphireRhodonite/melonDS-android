@@ -203,6 +203,10 @@ class AndroidEmulatorManager(
     }
 
     private fun precompileVulkanPipelines(configuration: EmulatorConfiguration): Boolean {
+        if (configuration.rendererConfiguration.renderer != VideoRenderer.VULKAN) {
+            return true
+        }
+
         val retroShader = configuration.rendererConfiguration.retroArchShader
         Log.i(
             TAG,
