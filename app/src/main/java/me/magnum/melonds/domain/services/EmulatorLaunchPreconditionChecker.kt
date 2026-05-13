@@ -23,7 +23,8 @@ class EmulatorLaunchPreconditionChecker(
 ) {
 
     suspend fun checkRomLaunchPreconditions(rom: Rom): RomLaunchPreconditionCheckResult {
-        getRendererValidationFailureOrNull()?.let {
+        val renderer = settingsRepository.getEffectiveVideoRenderer(rom.config)
+        getRendererValidationFailureOrNull(renderer)?.let {
             return when (it) {
                 RendererValidationFailure.UNSUPPORTED -> RomLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
                 RendererValidationFailure.INIT_FAILED -> RomLaunchPreconditionCheckResult.RendererInitFailed(VideoRenderer.VULKAN)
@@ -46,7 +47,7 @@ class EmulatorLaunchPreconditionChecker(
     }
 
     suspend fun checkFirmwareLaunchPreconditions(consoleType: ConsoleType): FirmwareLaunchPreconditionCheckResult {
-        getRendererValidationFailureOrNull()?.let {
+        getRendererValidationFailureOrNull(settingsRepository.getCurrentVideoRenderer())?.let {
             return when (it) {
                 RendererValidationFailure.UNSUPPORTED -> FirmwareLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
                 RendererValidationFailure.INIT_FAILED -> FirmwareLaunchPreconditionCheckResult.RendererInitFailed(VideoRenderer.VULKAN)
@@ -96,8 +97,8 @@ class EmulatorLaunchPreconditionChecker(
         return configurationDirectoryVerifier.checkConsoleConfigurationDirectory(romTargetConsoleType)
     }
 
-    private suspend fun getRendererValidationFailureOrNull(): RendererValidationFailure? {
-        if (settingsRepository.getCurrentVideoRenderer() != VideoRenderer.VULKAN) {
+    private suspend fun getRendererValidationFailureOrNull(renderer: VideoRenderer): RendererValidationFailure? {
+        if (renderer != VideoRenderer.VULKAN) {
             return null
         }
 

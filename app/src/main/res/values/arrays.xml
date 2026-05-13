@@ -50,16 +50,13 @@
     <string-array name="video_filtering_values">
         <item>none</item>
         <item>linear</item>
-        <item>sharp_2d</item>
         <item>xbr2</item>
         <item>hq2x</item>
         <item>hq4x</item>
         <item>quilez</item>
         <item>lcd</item>
-        <item>lcd_grid_dslite</item>
         <item>scanlines</item>
         <item>retroarch</item>
-        <item>custom</item>
     </string-array>
 
     <string-array name="dsi_camera_source_values">
@@ -71,7 +68,6 @@
     <string-array name="external_display_screen_values">
         <item>top</item>
         <item>bottom</item>
-        <item>custom</item>
     </string-array>
     <string-array name="audio_interpolation_values">
         <item>none</item>

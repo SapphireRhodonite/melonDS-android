@@ -3,7 +3,6 @@ package me.magnum.melonds.ui.emulator.render
 import android.opengl.GLES30
 import me.magnum.melonds.common.opengl.Shader
 import me.magnum.melonds.common.opengl.ShaderFactory
-import me.magnum.melonds.common.opengl.ShaderProgramSource
 import me.magnum.melonds.common.opengl.VideoFilterShaderProvider
 import me.magnum.melonds.domain.model.SCREEN_HEIGHT
 import me.magnum.melonds.domain.model.SCREEN_WIDTH
@@ -27,42 +26,26 @@ class ExternalScreenRender(
     private var fillWidth: Boolean,
 ) : EmulatorRenderer {
 
-    companion object {
-        private const val RESPONSE_WEIGHT = 0.333f
-    }
-
     private var shader: Shader? = null
     private var screensVbo = 0
     private var screensVao = 0
-    private val screenUvBounds = FloatArray(4)
 
     private var videoFiltering: VideoFiltering = VideoFiltering.NONE
-    private var customShader: ShaderProgramSource? = null
 
     private var surfaceWidth = 0
     private var surfaceHeight = 0
     private var areVerticesDirty = false
     private var areRenderSettingsDirty = false
     private var viewportLock = Any()
-    private var viewportWidth = 0
-    private var viewportHeight = 0
 
-    private var historyTexture = 0
-    private var historyWidth = 0
-    private var historyHeight = 0
-    private var historyReadFramebuffer = 0
-    private var historyDrawFramebuffer = 0
-    private var historyReady = false
     private var lastScreenTextureId = 0
     private var lastScreenTextureFiltering = Int.MIN_VALUE
 
     override fun updateRendererConfiguration(newRendererConfiguration: RuntimeRendererConfiguration?) {
         synchronized(viewportLock) {
             val newFiltering = newRendererConfiguration?.videoFiltering ?: VideoFiltering.NONE
-            val newCustomShader = newRendererConfiguration?.customShader
-            if (videoFiltering != newFiltering || customShader !== newCustomShader) {
+            if (videoFiltering != newFiltering) {
                 videoFiltering = newFiltering
-                customShader = newCustomShader
                 areRenderSettingsDirty = true
             }
         }
@@ -77,7 +60,7 @@ class ExternalScreenRender(
 
     override fun onSurfaceCreated() {
         shader = ShaderFactory.createShaderProgram(
-            VideoFilterShaderProvider.getShaderSource(videoFiltering, customShader)
+            VideoFilterShaderProvider.getShaderSource(videoFiltering)
         )
 
         val buffers = IntArray(2)
@@ -96,8 +79,6 @@ class ExternalScreenRender(
         }
 
         val (targetWidth, targetHeight) = computeTargetDimensions(actualWidth, actualHeight)
-        viewportWidth = targetWidth
-        viewportHeight = targetHeight
 
         if (rotateLeft) {
             val rotated = buildVertexCoords(actualHeight, actualWidth, targetHeight, targetWidth)
@@ -130,7 +111,6 @@ class ExternalScreenRender(
                 1f, 1f
             )
         }
-        fillUvBounds(uvs, screenUvBounds)
 
         val vertexData = floatArrayOf(
             coords[0], coords[1],   uvs[0], uvs[1], 1f,
@@ -238,32 +218,12 @@ class ExternalScreenRender(
         }
     }
 
-    private fun fillUvBounds(uvs: FloatArray, dest: FloatArray) {
-        var minU = 1f
-        var minV = 1f
-        var maxU = 0f
-        var maxV = 0f
-        for (i in uvs.indices step 2) {
-            val u = uvs[i]
-            val v = uvs[i + 1]
-            if (u < minU) minU = u
-            if (v < minV) minV = v
-            if (u > maxU) maxU = u
-            if (v > maxV) maxV = v
-        }
-        dest[0] = minU
-        dest[1] = minV
-        dest[2] = maxU
-        dest[3] = maxV
-    }
-
     private fun updateShader() {
         // Delete previous shader
         shader?.delete()
 
-        val shaderSource = VideoFilterShaderProvider.getShaderSource(videoFiltering, customShader)
+        val shaderSource = VideoFilterShaderProvider.getShaderSource(videoFiltering)
         shader = ShaderFactory.createShaderProgram(shaderSource)
-        historyReady = false
         lastScreenTextureFiltering = Int.MIN_VALUE
     }
 
@@ -296,59 +256,6 @@ class ExternalScreenRender(
         shader?.let { shader ->
             shader.use()
 
-            val requiresHistory = shader.uniformPrevTex >= 0 || shader.uniformPrevWeight >= 0
-            val requiresTexSize = shader.uniformTexSize >= 0
-            val textureInfo = if ((requiresHistory || requiresTexSize) && textureId != 0) {
-                val textureWidth = presentFrameWrapper.textureWidth
-                val textureHeight = presentFrameWrapper.textureHeight
-                if (textureWidth > 0 && textureHeight > 0) {
-                    val info = TextureSize(textureWidth, textureHeight)
-                    ensureHistoryResources(info)
-                    info
-                } else {
-                    null
-                }
-            } else {
-                null
-            }
-
-            if (shader.uniformViewportSize >= 0) {
-                val targetWidth = if (viewportWidth > 0) viewportWidth else surfaceWidth
-                val targetHeight = if (viewportHeight > 0) viewportHeight else surfaceHeight
-                val safeWidth = if (targetWidth > 0) targetWidth else 1
-                val safeHeight = if (targetHeight > 0) targetHeight else 1
-                GLES30.glUniform2f(shader.uniformViewportSize, safeWidth.toFloat(), safeHeight.toFloat())
-            }
-            if (shader.uniformUvBounds >= 0) {
-                GLES30.glUniform4f(
-                    shader.uniformUvBounds,
-                    screenUvBounds[0],
-                    screenUvBounds[1],
-                    screenUvBounds[2],
-                    screenUvBounds[3],
-                )
-            }
-
-            textureInfo?.let { info ->
-                if (shader.uniformTexSize >= 0) {
-                    GLES30.glUniform2f(shader.uniformTexSize, info.width.toFloat(), info.height.toFloat())
-                }
-            }
-
-            if (requiresHistory) {
-                historyReady = historyReady && historyTexture != 0 && textureInfo != null
-                if (shader.uniformPrevWeight >= 0) {
-                    val weight = if (historyReady) RESPONSE_WEIGHT else 0f
-                    GLES30.glUniform1f(shader.uniformPrevWeight, weight)
-                }
-
-                if (shader.uniformPrevTex >= 0 && historyTexture != 0) {
-                    GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, historyTexture)
-                    GLES30.glUniform1i(shader.uniformPrevTex, 1)
-                }
-            }
-
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
             if (lastScreenTextureId != textureId || lastScreenTextureFiltering != shader.textureFiltering) {
@@ -373,18 +280,6 @@ class ExternalScreenRender(
                 GLES30.glUniform1i(shader.uniformTex, 0)
             }
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 6)
-
-            if (requiresHistory) {
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-            }
-
-            if (textureInfo != null) {
-                copyFrameToHistory(textureId, textureInfo)
-            } else if (requiresHistory) {
-                historyReady = false
-            }
         }
     }
 
@@ -415,91 +310,4 @@ class ExternalScreenRender(
         }
     }
 
-    private fun ensureHistoryResources(size: TextureSize) {
-        if (historyTexture == 0 || size.width != historyWidth || size.height != historyHeight) {
-            if (historyTexture != 0) {
-                val textures = intArrayOf(historyTexture)
-                GLES30.glDeleteTextures(1, textures, 0)
-                historyTexture = 0
-            }
-
-            val textures = IntArray(1)
-            GLES30.glGenTextures(1, textures, 0)
-            historyTexture = textures[0]
-
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, historyTexture)
-            GLES30.glTexImage2D(
-                GLES30.GL_TEXTURE_2D,
-                0,
-                GLES30.GL_RGBA,
-                size.width,
-                size.height,
-                0,
-                GLES30.GL_RGBA,
-                GLES30.GL_UNSIGNED_BYTE,
-                null
-            )
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
-
-            historyWidth = size.width
-            historyHeight = size.height
-            historyReady = false
-        }
-
-        if (historyReadFramebuffer == 0 || historyDrawFramebuffer == 0) {
-            val framebuffers = IntArray(2)
-            GLES30.glGenFramebuffers(2, framebuffers, 0)
-            historyReadFramebuffer = framebuffers[0]
-            historyDrawFramebuffer = framebuffers[1]
-        }
-    }
-
-    private fun copyFrameToHistory(sourceTextureId: Int, size: TextureSize) {
-        if (historyTexture == 0 || historyReadFramebuffer == 0 || historyDrawFramebuffer == 0) {
-            historyReady = false
-            return
-        }
-
-        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, historyReadFramebuffer)
-        GLES30.glFramebufferTexture2D(
-            GLES30.GL_READ_FRAMEBUFFER,
-            GLES30.GL_COLOR_ATTACHMENT0,
-            GLES30.GL_TEXTURE_2D,
-            sourceTextureId,
-            0
-        )
-
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, historyDrawFramebuffer)
-        GLES30.glFramebufferTexture2D(
-            GLES30.GL_DRAW_FRAMEBUFFER,
-            GLES30.GL_COLOR_ATTACHMENT0,
-            GLES30.GL_TEXTURE_2D,
-            historyTexture,
-            0
-        )
-
-        GLES30.glBlitFramebuffer(
-            0,
-            0,
-            size.width,
-            size.height,
-            0,
-            0,
-            size.width,
-            size.height,
-            GLES30.GL_COLOR_BUFFER_BIT,
-            GLES30.GL_NEAREST
-        )
-
-        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, 0)
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, 0)
-
-        historyReady = true
-    }
-
-    private data class TextureSize(val width: Int, val height: Int)
 }

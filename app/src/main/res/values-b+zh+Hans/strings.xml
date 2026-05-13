@@ -541,16 +541,13 @@
     <string-array name="video_filtering_options">
         <item>无</item>
         <item>线性</item>
-        <item>Sharp 2D</item>
         <item>2xBR</item>
         <item>HQ2X</item>
         <item>HQ4X</item>
         <item>Quilez</item>
         <item>LCD</item>
-        <item>LCD Grid（DS Lite 运动模糊）</item>
         <item>扫描线</item>
         <item>RetroArch (.slangp)</item>
-        <item>自定义 (msha)</item>
     </string-array>
 
     <string-array name="dsi_camera_source_options">

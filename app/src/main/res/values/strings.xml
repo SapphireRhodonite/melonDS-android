@@ -766,20 +766,15 @@
     <string-array name="video_filtering_options">
         <item>None</item>
         <item>Linear</item>
-        <item>Sharp 2D</item>
         <item>2xBR</item>
         <item>HQ2X</item>
         <item>HQ4X</item>
         <item>Quilez</item>
         <item>LCD</item>
-        <item>LCD Grid (DS Lite motion blur)</item>
         <item>Scanlines</item>
         <item>RetroArch (.slangp)</item>
-        <item>Custom (msha)</item>
     </string-array>
 
-    <string name="video_custom_shader_title">Custom shader (.msha)</string>
-    <string name="video_custom_shader_summary">Select a melon shader (.msha) file to use when Custom filtering is selected.</string>
     <string name="video_retroarch_shader_root_title">RetroArch shader root</string>
     <string name="video_retroarch_shader_root_summary">Select the top-level slang-shaders folder so presets can resolve sibling shader, include, and LUT folders.</string>
     <string name="video_retroarch_shader_preset_title">RetroArch preset path</string>

@@ -1,8 +1,10 @@
 package me.magnum.melonds.ui.romdetails.ui
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,6 +54,8 @@ import me.magnum.melonds.ui.romdetails.model.RomGbaSlotConfigUiModel
 import me.magnum.melonds.ui.theme.MelonTheme
 import java.util.Date
 import java.util.UUID
+
+private const val GLES_3_2 = 0x30002
 
 @Composable
 fun RomConfigUi(
@@ -131,8 +135,28 @@ private fun Content(
     val internalResolutionOptions = stringArrayResource(id = R.array.video_internal_resolution_options)
     val videoFilteringOptions = stringArrayResource(id = R.array.video_filtering_options)
     val useGlobal = stringResource(R.string.use_global_preference)
-    val effectiveRenderer = romConfig.videoRenderer ?: romConfig.globalVideoRenderer
-    val effectiveFiltering = romConfig.videoFiltering ?: romConfig.globalVideoFiltering
+    val activityManager = context.getSystemService(ActivityManager::class.java)
+    val supportsOpenGlRenderer = (activityManager?.deviceConfigurationInfo?.reqGlEsVersion ?: 0) >= GLES_3_2
+    val supportsComputeRenderer = supportsOpenGlRenderer && Build.HARDWARE.equals("qcom", ignoreCase = true)
+    fun supportsRenderer(renderer: VideoRenderer): Boolean {
+        return when (renderer) {
+            VideoRenderer.OPENGL -> supportsOpenGlRenderer
+            VideoRenderer.COMPUTE -> supportsComputeRenderer
+            else -> true
+        }
+    }
+    val selectedRenderer = romConfig.videoRenderer?.takeIf { supportsRenderer(it) }
+    val effectiveRenderer = selectedRenderer ?: romConfig.globalVideoRenderer
+    fun supportsFiltering(renderer: VideoRenderer, filtering: VideoFiltering): Boolean {
+        return when (renderer) {
+            VideoRenderer.VULKAN -> filtering.isSupportedByVulkan()
+            else -> filtering.isSupportedByOpenGlSurface()
+        }
+    }
+    val selectedFiltering = romConfig.videoFiltering?.takeIf { supportsFiltering(effectiveRenderer, it) }
+    val effectiveGlobalFiltering = romConfig.globalVideoFiltering.takeIf { supportsFiltering(effectiveRenderer, it) }
+        ?: VideoFiltering.NONE
+    val effectiveFiltering = selectedFiltering ?: effectiveGlobalFiltering
     fun useGlobalWithValue(value: String): String {
         return context.getString(R.string.use_global_preference_with_value, value)
     }
@@ -149,15 +173,22 @@ private fun Content(
     val globalInternalResolutionLabel = internalResolutionOptions[
         (romConfig.globalInternalResolutionScaling - 1).coerceIn(internalResolutionOptions.indices)
     ]
-    val globalVideoFilteringLabel = videoFilteringOptions[romConfig.globalVideoFiltering.ordinal]
+    val globalVideoFilteringLabel = videoFilteringOptions[effectiveGlobalFiltering.ordinal]
     val globalRetroArchPresetPathLabel = romConfig.globalRetroArchShaderPresetPath ?: context.getString(R.string.not_set)
     val globalRetroArchParametersLabel = romConfig.globalRetroArchShaderParameters ?: context.getString(R.string.not_set)
-    val rendererItems = listOf(null, VideoRenderer.SOFTWARE, VideoRenderer.OPENGL, VideoRenderer.VULKAN)
-    val filteringItems = listOf(null) + VideoFiltering.entries.filter { filtering ->
-        when (effectiveRenderer) {
-            VideoRenderer.VULKAN -> filtering.isSupportedByVulkan()
-            else -> filtering.isSupportedByOpenGlSurface()
+    val rendererItems = buildList<VideoRenderer?> {
+        add(null)
+        add(VideoRenderer.SOFTWARE)
+        if (supportsOpenGlRenderer) {
+            add(VideoRenderer.OPENGL)
         }
+        add(VideoRenderer.VULKAN)
+        if (supportsComputeRenderer) {
+            add(VideoRenderer.COMPUTE)
+        }
+    }
+    val filteringItems = listOf(null) + VideoFiltering.entries.filter { filtering ->
+        supportsFiltering(effectiveRenderer, filtering)
     }
 
     Column(
@@ -241,14 +272,14 @@ private fun Content(
         ConfigSection(title = stringResource(R.string.label_rom_config_video)) {
             ConfigRow(
                 title = stringResource(R.string.renderer),
-                value = romConfig.videoRenderer?.let { rendererOptions[it.ordinal] } ?: useGlobalWithValue(globalRendererLabel),
+                value = selectedRenderer?.let { rendererOptions[it.ordinal] } ?: useGlobalWithValue(globalRendererLabel),
                 showDivider = true,
                 onClick = {
                     videoRendererDialogState.show(
                         title = context.getString(R.string.renderer),
                         items = rendererItems,
                         labelOf = { renderer -> renderer?.let { rendererOptions[it.ordinal] } ?: useGlobalWithValue(globalRendererLabel) },
-                        selected = romConfig.videoRenderer,
+                        selected = selectedRenderer,
                         onSelect = { onConfigUpdate(RomConfigUpdateEvent.VideoRendererUpdate(it)) },
                     )
                 },
@@ -301,14 +332,14 @@ private fun Content(
             }
             ConfigRow(
                 title = stringResource(R.string.filter),
-                value = romConfig.videoFiltering?.let { videoFilteringOptions[it.ordinal] } ?: useGlobalWithValue(globalVideoFilteringLabel),
+                value = selectedFiltering?.let { videoFilteringOptions[it.ordinal] } ?: useGlobalWithValue(globalVideoFilteringLabel),
                 showDivider = effectiveRenderer == VideoRenderer.VULKAN && effectiveFiltering == VideoFiltering.RETROARCH,
                 onClick = {
                     videoFilteringDialogState.show(
                         title = context.getString(R.string.filter),
                         items = filteringItems,
                         labelOf = { filtering -> filtering?.let { videoFilteringOptions[it.ordinal] } ?: useGlobalWithValue(globalVideoFilteringLabel) },
-                        selected = romConfig.videoFiltering,
+                        selected = selectedFiltering,
                         onSelect = { onConfigUpdate(RomConfigUpdateEvent.VideoFilteringUpdate(it)) },
                     )
                 },

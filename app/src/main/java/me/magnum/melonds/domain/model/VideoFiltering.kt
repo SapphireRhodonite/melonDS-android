@@ -6,22 +6,19 @@ import androidx.annotation.Keep
 enum class VideoFiltering {
     NONE,
     LINEAR,
-    SHARP_2D,
     XBR2,
     HQ2X,
     HQ4X,
     QUILEZ,
     LCD,
-    LCD_GRID_DSLITE,
     SCANLINES,
-    RETROARCH,
-    CUSTOM;
+    RETROARCH;
 
     fun isSupportedByVulkan(): Boolean {
-        return this != CUSTOM
+        return true
     }
 
     fun isSupportedByOpenGlSurface(): Boolean {
-        return this != SHARP_2D && this != RETROARCH
+        return this != RETROARCH
     }
 }

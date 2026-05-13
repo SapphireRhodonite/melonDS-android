@@ -1,31 +1,20 @@
 package me.magnum.melonds.common.opengl
 
-import android.util.Log
 import me.magnum.melonds.domain.model.VideoFiltering
 
 object VideoFilterShaderProvider {
-    private const val TAG = "VideoFilterShaderProvider"
     private val FILTERING_SHADER_MAP = mapOf(
         VideoFiltering.NONE to ShaderProgramSource.NoFilterShader,
         VideoFiltering.LINEAR to ShaderProgramSource.LinearShader,
-        VideoFiltering.SHARP_2D to ShaderProgramSource.NoFilterShader,
         VideoFiltering.XBR2 to ShaderProgramSource.XbrShader,
         VideoFiltering.HQ2X to ShaderProgramSource.Hq2xShader,
         VideoFiltering.HQ4X to ShaderProgramSource.Hq4xShader,
         VideoFiltering.QUILEZ to ShaderProgramSource.QuilezShader,
         VideoFiltering.LCD to ShaderProgramSource.LcdShader,
-        VideoFiltering.LCD_GRID_DSLITE to ShaderProgramSource.LcdGridDsLiteShader,
         VideoFiltering.SCANLINES to ShaderProgramSource.ScanlinesShader,
     )
 
-    fun getShaderSource(filtering: VideoFiltering, customShader: ShaderProgramSource? = null): ShaderProgramSource {
-        if (filtering == VideoFiltering.CUSTOM) {
-            if (customShader == null) {
-                Log.w(TAG, "Custom shader requested but not available. Falling back to default shader")
-                return ShaderProgramSource.NoFilterShader
-            }
-            return customShader
-        }
+    fun getShaderSource(filtering: VideoFiltering): ShaderProgramSource {
         return FILTERING_SHADER_MAP[filtering] ?: ShaderProgramSource.NoFilterShader
     }
 }

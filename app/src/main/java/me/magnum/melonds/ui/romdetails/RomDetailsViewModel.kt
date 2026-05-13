@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.magnum.melonds.common.Permission
 import me.magnum.melonds.common.UriPermissionManager
+import me.magnum.melonds.domain.model.VideoFiltering
+import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.rom.config.RomConfig
 import me.magnum.melonds.domain.model.rom.config.RomInputMode
@@ -144,7 +146,16 @@ class RomDetailsViewModel @Inject constructor(
                 }
             }
             is RomConfigUpdateEvent.CustomNameUpdate -> currentRomConfig.copy(customName = event.customName)
-            is RomConfigUpdateEvent.VideoRendererUpdate -> currentRomConfig.copy(videoRenderer = event.videoRenderer)
+            is RomConfigUpdateEvent.VideoRendererUpdate -> {
+                val targetRenderer = event.videoRenderer
+                val targetFiltering = currentRomConfig.videoFiltering
+                currentRomConfig.copy(
+                    videoRenderer = targetRenderer,
+                    videoFiltering = targetFiltering?.takeIf {
+                        targetRenderer == null || isFilteringSupported(targetRenderer, it)
+                    },
+                )
+            }
             is RomConfigUpdateEvent.ThreadedRenderingUpdate -> currentRomConfig.copy(threadedRendering = event.threadedRendering)
             is RomConfigUpdateEvent.InternalResolutionScalingUpdate -> currentRomConfig.copy(internalResolutionScaling = event.internalResolutionScaling)
             is RomConfigUpdateEvent.VideoFilteringUpdate -> currentRomConfig.copy(videoFiltering = event.videoFiltering)
@@ -179,5 +190,12 @@ class RomDetailsViewModel @Inject constructor(
             newConfig.gbaSlotConfig.savePath?.let { uriPermissionManager.persistFilePermissions(it, Permission.READ_WRITE) }
         }
         romsRepository.updateRomConfig(_rom.value, newConfig)
+    }
+
+    private fun isFilteringSupported(renderer: VideoRenderer, filtering: VideoFiltering): Boolean {
+        return when (renderer) {
+            VideoRenderer.VULKAN -> filtering.isSupportedByVulkan()
+            else -> filtering.isSupportedByOpenGlSurface()
+        }
     }
 }

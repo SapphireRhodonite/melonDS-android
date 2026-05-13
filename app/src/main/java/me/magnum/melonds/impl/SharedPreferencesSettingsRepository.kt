@@ -1,5 +1,6 @@
 package me.magnum.melonds.impl
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
@@ -26,8 +27,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import me.magnum.melonds.common.opengl.ShaderProgramSource
-import me.magnum.melonds.common.opengl.ShaderProgramSourceLoader
 import me.magnum.melonds.common.retroarch.RetroArchShaderPreset
 import me.magnum.melonds.common.uridelegates.UriHandler
 import me.magnum.melonds.domain.model.AudioBitrate
@@ -88,6 +87,7 @@ class SharedPreferencesSettingsRepository(
         private const val KEY_DUAL_SCREEN_EXTERNAL_FILL_WIDTH = "dual_screen_external_fill_width"
         private const val KEY_DUAL_SCREEN_INTERNAL_VERTICAL_ALIGNMENT = "dual_screen_internal_vertical_alignment"
         private const val KEY_DUAL_SCREEN_EXTERNAL_VERTICAL_ALIGNMENT = "dual_screen_external_vertical_alignment"
+        private const val GLES_3_2 = 0x30002
         private val EmptyRetroArchShaderConfiguration = RetroArchShaderConfiguration(
             presetPath = null,
             sourceResolution = RetroArchShaderSourceResolution.VULKAN_IR,
@@ -113,7 +113,6 @@ class SharedPreferencesSettingsRepository(
     }
     private val preferenceSharedFlows = mutableMapOf<String, MutableSharedFlow<Unit>>()
     private val renderConfigurationFlow: SharedFlow<RendererConfiguration>
-    @Volatile private var cachedCustomShader: Pair<Uri, ShaderProgramSourceLoader.Result>? = null
     @Volatile private var cachedRetroArchShaderRoot: String? = null
     @Volatile private var cachedRetroArchShaderImportKey: String? = null
     private data class RetroArchPresetReferences(
@@ -211,9 +210,8 @@ class SharedPreferencesSettingsRepository(
 
         renderConfigurationFlow = combine(
             renderInputsFlow,
-            observeVideoCustomShader(),
             observeRetroArchShaderConfiguration(),
-        ) { renderInputs, customShaderUri, retroArchShader ->
+        ) { renderInputs, retroArchShader ->
             val effectiveFiltering = when {
                 renderInputs.core.renderer == VideoRenderer.VULKAN && !renderInputs.core.filtering.isSupportedByVulkan() -> VideoFiltering.NONE
                 renderInputs.core.renderer == VideoRenderer.VULKAN &&
@@ -222,12 +220,9 @@ class SharedPreferencesSettingsRepository(
                 renderInputs.core.renderer != VideoRenderer.VULKAN && !renderInputs.core.filtering.isSupportedByOpenGlSurface() -> VideoFiltering.NONE
                 else -> renderInputs.core.filtering
             }
-            val customShader = when {
-                renderInputs.core.renderer == VideoRenderer.VULKAN -> null
-                else -> loadCustomShader(customShaderUri)
-            }
             val effectiveThreadedRendering = renderInputs.core.threadedRenderingEnabled &&
                 (renderInputs.core.renderer == VideoRenderer.SOFTWARE || renderInputs.core.renderer == VideoRenderer.VULKAN)
+            val coverageFixEnabled = renderInputs.core.renderer == VideoRenderer.OPENGL && renderInputs.coverageFix.enabled
             RendererConfiguration(
                 renderInputs.core.renderer,
                 effectiveFiltering,
@@ -236,13 +231,12 @@ class SharedPreferencesSettingsRepository(
                 renderInputs.core.rendererDebugToolsEnabled,
                 renderInputs.core.rendererDebugBgObjEnabled,
                 renderInputs.core.rendererDebugLatchTraceEnabled,
-                renderInputs.coverageFix.enabled,
+                coverageFixEnabled,
                 renderInputs.coverageFix.coveragePx,
                 renderInputs.coverageFix.depthBias,
                 renderInputs.coverageFix.applyRepeat,
                 renderInputs.coverageFix.applyClamp,
                 renderInputs.coverageFix.debugClearMagenta,
-                customShader,
                 if (effectiveFiltering == VideoFiltering.RETROARCH) retroArchShader else EmptyRetroArchShaderConfiguration,
             )
         }.conflate().shareIn(preferencesCoroutineScope, SharingStarted.Lazily, replay = 1)
@@ -474,7 +468,15 @@ class SharedPreferencesSettingsRepository(
 
     override fun getCurrentVideoRenderer(): VideoRenderer {
         val videoRendererPreference = preferences.getString("video_renderer", "software")!!
-        return VideoRenderer.valueOf(videoRendererPreference.uppercase())
+        return sanitizeVideoRenderer(
+            runCatching { VideoRenderer.valueOf(videoRendererPreference.uppercase()) }
+                .getOrDefault(VideoRenderer.SOFTWARE),
+            fallback = VideoRenderer.SOFTWARE,
+        )
+    }
+
+    override fun getEffectiveVideoRenderer(romConfig: RomConfig): VideoRenderer {
+        return sanitizeVideoRenderer(romConfig.videoRenderer, fallback = getCurrentVideoRenderer())
     }
 
     override fun setCurrentVideoRenderer(renderer: VideoRenderer) {
@@ -499,19 +501,9 @@ class SharedPreferencesSettingsRepository(
     override fun getVideoFiltering(): Flow<VideoFiltering> {
         return getOrCreatePreferenceSharedFlow("video_filtering") {
             val filteringPreference = preferences.getString("video_filtering", "none")!!
-            VideoFiltering.valueOf(filteringPreference.uppercase())
+            runCatching { VideoFiltering.valueOf(filteringPreference.uppercase()) }
+                .getOrDefault(VideoFiltering.NONE)
         }
-    }
-
-    private fun observeVideoCustomShader(): Flow<Uri?> {
-        return getOrCreatePreferenceSharedFlow("video_custom_shader") {
-            getVideoCustomShaderUri()
-        }
-    }
-
-    private fun getVideoCustomShaderUri(): Uri? {
-        val shaderPreference = preferences.getStringSet("video_custom_shader", null)?.firstOrNull()
-        return shaderPreference?.toUri()
     }
 
     private fun observeRetroArchShaderConfiguration(): Flow<RetroArchShaderConfiguration> {
@@ -794,35 +786,6 @@ class SharedPreferencesSettingsRepository(
     private fun resolveRetroArchRelativePath(baseRelativePath: String, rawReference: String): String {
         return RetroArchShaderPreset.resolveRelativePath(baseRelativePath, rawReference)
             ?: throw IllegalArgumentException("Unsupported RetroArch shader dependency path: $rawReference")
-    }
-
-    private fun loadCustomShader(uri: Uri?): ShaderProgramSource? {
-        if (uri == null) {
-            cachedCustomShader = null
-            return null
-        }
-
-        cachedCustomShader?.let { (cachedUri, cachedResult) ->
-            if (cachedUri == uri) {
-                return cachedResult.source
-            }
-        }
-
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                val result = ShaderProgramSourceLoader.load(stream)
-                cachedCustomShader = uri to result
-                result.source
-            } ?: run {
-                Log.w(TAG, "Unable to open custom shader URI: $uri")
-                cachedCustomShader = null
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load custom shader from $uri", e)
-            cachedCustomShader = null
-            null
-        }
     }
 
     override fun isThreadedRenderingEnabled(): Flow<Boolean> {
@@ -1400,7 +1363,7 @@ class SharedPreferencesSettingsRepository(
         globalPresetRelativePath: String?,
         globalParameterText: String?,
     ): RendererConfiguration {
-        val renderer = romConfig.videoRenderer ?: baseConfiguration.renderer
+        val renderer = sanitizeVideoRenderer(romConfig.videoRenderer, fallback = baseConfiguration.renderer)
         val requestedFiltering = romConfig.videoFiltering ?: baseConfiguration.videoFiltering
         val retroArchShader = if (renderer == VideoRenderer.VULKAN && requestedFiltering == VideoFiltering.RETROARCH) {
             if (romConfig.retroArchShaderPresetPath == null && romConfig.retroArchShaderParameters == null) {
@@ -1432,8 +1395,26 @@ class SharedPreferencesSettingsRepository(
             videoFiltering = effectiveFiltering,
             threadedRendering = threadedRendering,
             internalResolutionScaling = romConfig.internalResolutionScaling ?: baseConfiguration.resolutionScaling,
-            customShader = if (renderer == VideoRenderer.VULKAN) null else baseConfiguration.customShader,
             retroArchShader = if (effectiveFiltering == VideoFiltering.RETROARCH) retroArchShader else EmptyRetroArchShaderConfiguration,
         )
+    }
+
+    private fun sanitizeVideoRenderer(renderer: VideoRenderer?, fallback: VideoRenderer): VideoRenderer {
+        return when (renderer) {
+            null -> fallback
+            VideoRenderer.OPENGL -> if (isOpenGlRendererSupported()) VideoRenderer.OPENGL else fallback
+            VideoRenderer.COMPUTE -> if (isComputeRendererSupported()) VideoRenderer.COMPUTE else fallback
+            else -> renderer
+        }
+    }
+
+    private fun isOpenGlRendererSupported(): Boolean {
+        val activityManager = context.getSystemService(ActivityManager::class.java)
+        val deviceGlesVersion = activityManager?.deviceConfigurationInfo?.reqGlEsVersion ?: 0
+        return deviceGlesVersion >= GLES_3_2
+    }
+
+    private fun isComputeRendererSupported(): Boolean {
+        return isOpenGlRendererSupported() && Build.HARDWARE.equals("qcom", ignoreCase = true)
     }
 }

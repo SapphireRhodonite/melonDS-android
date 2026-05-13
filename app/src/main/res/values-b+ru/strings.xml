@@ -543,16 +543,13 @@
     <string-array name="video_filtering_options">
         <item>Нет</item>
         <item>Линейное</item>
-        <item>Sharp 2D</item>
         <item>2xBR</item>
         <item>HQ2X</item>
         <item>HQ4X</item>
         <item>Quilez</item>
         <item>LCD</item>
-        <item>LCD Grid (размытие движения DS Lite)</item>
         <item>Сканлайны</item>
         <item>RetroArch (.slangp)</item>
-        <item>Пользовательский (msha)</item>
     </string-array>
 
     <string-array name="dsi_camera_source_options">

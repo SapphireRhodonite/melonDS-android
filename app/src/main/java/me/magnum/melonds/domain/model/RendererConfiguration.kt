@@ -1,7 +1,5 @@
 package me.magnum.melonds.domain.model
 
-import me.magnum.melonds.common.opengl.ShaderProgramSource
-
 data class RendererConfiguration(
     val renderer: VideoRenderer,
     val videoFiltering: VideoFiltering,
@@ -16,7 +14,6 @@ data class RendererConfiguration(
     val conservativeCoverageApplyRepeat: Boolean,
     val conservativeCoverageApplyClamp: Boolean,
     val debug3dClearMagenta: Boolean,
-    val customShader: ShaderProgramSource?,
     val retroArchShader: RetroArchShaderConfiguration,
 ) {
 

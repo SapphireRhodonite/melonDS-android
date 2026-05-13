@@ -113,7 +113,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         videoFilteringPreference.inGameLockedMessageRes = R.string.cannot_change_use_rom_settings
         val dsiCameraSourcePreference = findPreference<ListPreference>("dsi_camera_source")!!
         val dsiCameraImagePreference = findPreference<StoragePickerPreference>("dsi_camera_static_image")!!
-        val customShaderPreference = findPreference<StoragePickerPreference>("video_custom_shader")!!
         val retroArchShaderRootPreference = findPreference<StoragePickerPreference>("video_retroarch_shader_root")!!
         val retroArchShaderPresetPreference = findPreference<ListPreference>("video_retroarch_shader_preset")!!
         val retroArchShaderParametersPreference = findPreference<EditTextPreference>("video_retroarch_shader_parameters")!!
@@ -138,10 +137,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                 entryValues = filteredPairs.map { it.first }.toTypedArray()
                 this.entries = filteredPairs.map { it.second }.toTypedArray()
 
-                if (value.equals("opengl", ignoreCase = true)) {
+                if (!supportsOpenGlRenderer && value.equals("opengl", ignoreCase = true)) {
                     value = "software"
                 }
-                if (value.equals("compute", ignoreCase = true)) {
+                if (!supportsComputeRenderer && value.equals("compute", ignoreCase = true)) {
                     value = "software"
                 }
             }
@@ -160,7 +159,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                 onRendererPreferenceChanged(
                     rendererValue = rendererValue,
                     videoFilteringPreference = videoFilteringPreference,
-                    customShaderPreference = customShaderPreference,
                     retroArchShaderRootPreference = retroArchShaderRootPreference,
                     retroArchShaderPresetPreference = retroArchShaderPresetPreference,
                     retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -183,7 +181,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         }
 
         helper.setupStoragePickerPreference(dsiCameraImagePreference)
-        helper.setupStoragePickerPreference(customShaderPreference)
         helper.setupStoragePickerPreference(retroArchShaderRootPreference)
         helper.bindPreferenceSummaryToValue(retroArchShaderPresetPreference)
         helper.bindPreferenceSummaryToValue(retroArchShaderParametersPreference)
@@ -200,7 +197,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         updateFilteringPreferences(
             renderer = enumValueOfIgnoreCase(rendererPreference.value),
             videoFilteringPreference = videoFilteringPreference,
-            customShaderPreference = customShaderPreference,
             retroArchShaderRootPreference = retroArchShaderRootPreference,
             retroArchShaderPresetPreference = retroArchShaderPresetPreference,
             retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -212,7 +208,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             updateShaderPickerPreferences(
                 renderer = enumValueOfIgnoreCase(rendererPreference.value),
                 filteringValue = newValue as String,
-                customShaderPreference = customShaderPreference,
                 retroArchShaderRootPreference = retroArchShaderRootPreference,
                 retroArchShaderPresetPreference = retroArchShaderPresetPreference,
                 retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -224,7 +219,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         onRendererPreferenceChanged(
             rendererValue = rendererPreference.value,
             videoFilteringPreference = videoFilteringPreference,
-            customShaderPreference = customShaderPreference,
             retroArchShaderRootPreference = retroArchShaderRootPreference,
             retroArchShaderPresetPreference = retroArchShaderPresetPreference,
             retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -431,7 +425,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private fun onRendererPreferenceChanged(
         rendererValue: String,
         videoFilteringPreference: ListPreference,
-        customShaderPreference: StoragePickerPreference,
         retroArchShaderRootPreference: StoragePickerPreference,
         retroArchShaderPresetPreference: ListPreference,
         retroArchShaderParametersPreference: EditTextPreference,
@@ -500,7 +493,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     it.isVisible = true
                 }
                 coverageFixPreferences.forEach {
-                    it.isVisible = true
+                    it.isVisible = false
                 }
                 rendererDebugPreferences.forEach {
                     it.isVisible = true
@@ -514,7 +507,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         updateFilteringPreferences(
             renderer = newRenderer,
             videoFilteringPreference = videoFilteringPreference,
-            customShaderPreference = customShaderPreference,
             retroArchShaderRootPreference = retroArchShaderRootPreference,
             retroArchShaderPresetPreference = retroArchShaderPresetPreference,
             retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -527,7 +519,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private fun updateFilteringPreferences(
         renderer: VideoRenderer,
         videoFilteringPreference: ListPreference,
-        customShaderPreference: StoragePickerPreference,
         retroArchShaderRootPreference: StoragePickerPreference,
         retroArchShaderPresetPreference: ListPreference,
         retroArchShaderParametersPreference: EditTextPreference,
@@ -536,7 +527,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         allFilteringEntries: Array<String>,
     ) {
         val filteredPairs = allFilteringValues.zip(allFilteringEntries).filter { (value, _) ->
-            val filtering = enumValueOfIgnoreCase<VideoFiltering>(value)
+            val filtering = videoFilteringOrNone(value)
             when (renderer) {
                 VideoRenderer.VULKAN -> filtering.isSupportedByVulkan()
                 else -> filtering.isSupportedByOpenGlSurface()
@@ -546,7 +537,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         videoFilteringPreference.entryValues = filteredPairs.map { it.first }.toTypedArray()
         videoFilteringPreference.entries = filteredPairs.map { it.second }.toTypedArray()
 
-        val currentFiltering = enumValueOfIgnoreCase<VideoFiltering>(videoFilteringPreference.value)
+        val currentFiltering = videoFilteringOrNone(videoFilteringPreference.value)
         val currentFilteringSupported = when (renderer) {
             VideoRenderer.VULKAN -> currentFiltering.isSupportedByVulkan()
             else -> currentFiltering.isSupportedByOpenGlSurface()
@@ -558,7 +549,6 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         updateShaderPickerPreferences(
             renderer = renderer,
             filteringValue = videoFilteringPreference.value,
-            customShaderPreference = customShaderPreference,
             retroArchShaderRootPreference = retroArchShaderRootPreference,
             retroArchShaderPresetPreference = retroArchShaderPresetPreference,
             retroArchShaderParametersPreference = retroArchShaderParametersPreference,
@@ -569,20 +559,22 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private fun updateShaderPickerPreferences(
         renderer: VideoRenderer,
         filteringValue: String,
-        customShaderPreference: StoragePickerPreference,
         retroArchShaderRootPreference: StoragePickerPreference,
         retroArchShaderPresetPreference: ListPreference,
         retroArchShaderParametersPreference: EditTextPreference,
         retroArchShaderClearHistoryPreference: SwitchPreference,
     ) {
-        val filtering = enumValueOfIgnoreCase<VideoFiltering>(filteringValue)
-        val customEnabled = renderer != VideoRenderer.VULKAN && filtering == VideoFiltering.CUSTOM
+        val filtering = videoFilteringOrNone(filteringValue)
         val retroArchEnabled = renderer == VideoRenderer.VULKAN && filtering == VideoFiltering.RETROARCH
-        customShaderPreference.isEnabled = customEnabled
         retroArchShaderRootPreference.isEnabled = retroArchEnabled
         retroArchShaderPresetPreference.isEnabled = retroArchEnabled
         retroArchShaderParametersPreference.isEnabled = retroArchEnabled
         retroArchShaderClearHistoryPreference.isEnabled = retroArchEnabled
+    }
+
+    private fun videoFilteringOrNone(value: String?): VideoFiltering {
+        return runCatching { enumValueOfIgnoreCase<VideoFiltering>(value.orEmpty()) }
+            .getOrDefault(VideoFiltering.NONE)
     }
 
     private fun applyRetroArchPresetSelection(preference: ListPreference, selectedPreset: String) {

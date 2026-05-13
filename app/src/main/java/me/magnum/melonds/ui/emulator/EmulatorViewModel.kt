@@ -1837,7 +1837,6 @@ class EmulatorViewModel @Inject constructor(
                     renderer = it.renderer,
                     videoFiltering = it.videoFiltering,
                     resolutionScaling = it.resolutionScaling,
-                    customShader = it.customShader,
                     retroArchShader = it.retroArchShader,
                 )
             }
@@ -3396,9 +3395,7 @@ class EmulatorViewModel @Inject constructor(
         val filteringOptions = context.resources.getStringArray(R.array.video_filtering_options)
         val micOptions = context.resources.getStringArray(R.array.game_runtime_mic_source_options)
         val effectiveConfiguration = settingsRepository.getEmulatorConfiguration(rom.config)
-        val globalVideoFiltering = settingsRepository.getVideoFiltering().firstOrNull()
-            ?: effectiveConfiguration.rendererConfiguration.videoFiltering
-        val requestedVideoFiltering = rom.config.videoFiltering ?: globalVideoFiltering
+        val effectiveVideoFiltering = effectiveConfiguration.rendererConfiguration.videoFiltering
         val globalRetroArchPresetPath = settingsRepository.observeRetroArchShaderPresetPath().firstOrNull()
         val globalRetroArchParameters = settingsRepository.observeRetroArchShaderParametersText().firstOrNull()
         val globalLayoutName = layoutsRepository.getLayout(settingsRepository.getSelectedLayoutId())?.name
@@ -3412,7 +3409,7 @@ class EmulatorViewModel @Inject constructor(
             ?: RuntimeMicSource.DEFAULT
         val hasValidRetroArchShaderRoot = settingsRepository.observeRetroArchShaderRootValid().firstOrNull() == true
         val showRetroArchSettings = effectiveConfiguration.rendererConfiguration.renderer == VideoRenderer.VULKAN &&
-            requestedVideoFiltering == VideoFiltering.RETROARCH &&
+            effectiveVideoFiltering == VideoFiltering.RETROARCH &&
             hasValidRetroArchShaderRoot
 
         return InGameRomSettingsMenuState(
@@ -3424,9 +3421,11 @@ class EmulatorViewModel @Inject constructor(
             layoutValue = rom.config.layoutId?.let { layoutId ->
                 layoutsRepository.getLayout(layoutId)?.name ?: context.getString(R.string.not_set)
             } ?: useGlobalWithValue(globalLayoutName),
-            videoFilteringValue = rom.config.videoFiltering?.let { filtering ->
-                filteringOptions[filtering.ordinal]
-            } ?: useGlobalWithValue(filteringOptions[globalVideoFiltering.ordinal]),
+            videoFilteringValue = if (rom.config.videoFiltering == null) {
+                useGlobalWithValue(filteringOptions[effectiveVideoFiltering.ordinal])
+            } else {
+                filteringOptions[effectiveVideoFiltering.ordinal]
+            },
             showRetroArchSettings = showRetroArchSettings,
             retroArchPresetPathValue = rom.config.retroArchShaderPresetPath ?: useGlobalWithValue(globalRetroArchPresetPathLabel),
             retroArchParametersValue = rom.config.retroArchShaderParameters ?: useGlobalWithValue(globalRetroArchParametersLabel),

@@ -9,40 +9,25 @@ class Shader(
     private val fragmentShaderId: Int,
     private val programId: Int,
     val textureFiltering: Int,
-    private val bindings: ShaderProgramSource.Bindings,
 ) {
     val attribUv: Int
     val attribPos: Int
     val attribAlpha: Int
     val uniformTex: Int
-    val uniformPrevTex: Int
-    val uniformPrevWeight: Int
-    val uniformTexSize: Int
-    val uniformViewportSize: Int
-    val uniformUvBounds: Int
 
     init {
         GLES30.glUseProgram(programId)
-        attribUv = getAttributeLocation(bindings.attribUv)
-        attribPos = getAttributeLocation(bindings.attribPos)
-        attribAlpha = getAttributeLocation(bindings.attribAlpha)
-        uniformTex = getUniformLocation(bindings.uniformTex)
-        uniformPrevTex = getUniformLocation(bindings.uniformPrevTex)
-        uniformPrevWeight = getUniformLocation(bindings.uniformPrevWeight)
-        uniformTexSize = getUniformLocation(bindings.uniformTexSize)
-        uniformViewportSize = getUniformLocation(bindings.uniformViewportSize)
-        uniformUvBounds = getUniformLocation(bindings.uniformScreenUvBounds)
+        attribUv = GLES30.glGetAttribLocation(programId, "vUV")
+        attribPos = GLES30.glGetAttribLocation(programId, "vPos")
+        attribAlpha = GLES30.glGetAttribLocation(programId, "vAlpha")
+        uniformTex = GLES30.glGetUniformLocation(programId, "tex")
         GLES30.glUseProgram(0)
     }
 
     fun use() {
         GLES30.glUseProgram(programId)
-        if (attribUv != INVALID_ATTRIBUTE) {
-            GLES30.glEnableVertexAttribArray(attribUv)
-        }
-        if (attribPos != INVALID_ATTRIBUTE) {
-            GLES30.glEnableVertexAttribArray(attribPos)
-        }
+        GLES30.glEnableVertexAttribArray(attribUv)
+        GLES30.glEnableVertexAttribArray(attribPos)
         if (attribAlpha != INVALID_ATTRIBUTE) {
             GLES30.glEnableVertexAttribArray(attribAlpha)
         }
@@ -52,19 +37,5 @@ class Shader(
         GLES30.glDeleteShader(vertexShaderId)
         GLES30.glDeleteShader(fragmentShaderId)
         GLES30.glDeleteProgram(programId)
-    }
-
-    private fun getAttributeLocation(name: String): Int {
-        if (name.isBlank()) {
-            return INVALID_ATTRIBUTE
-        }
-        return GLES30.glGetAttribLocation(programId, name)
-    }
-
-    private fun getUniformLocation(name: String): Int {
-        if (name.isBlank()) {
-            return INVALID_ATTRIBUTE
-        }
-        return GLES30.glGetUniformLocation(programId, name)
     }
 }

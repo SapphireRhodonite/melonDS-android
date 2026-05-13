@@ -43,6 +43,7 @@ interface SettingsRepository {
     fun isJitEnabled(): Boolean
 
     fun getCurrentVideoRenderer(): VideoRenderer
+    fun getEffectiveVideoRenderer(romConfig: RomConfig): VideoRenderer
     fun setCurrentVideoRenderer(renderer: VideoRenderer)
     fun getVideoRenderer(): Flow<VideoRenderer>
     fun getVideoInternalResolutionScaling(): Flow<Int>
