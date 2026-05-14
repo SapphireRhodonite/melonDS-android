@@ -701,7 +701,7 @@ FrameQueuePolicy makeLegacyFrameQueuePolicy()
 FrameQueuePolicy makeVulkanRealtimeFrameQueuePolicy(int renderScale)
 {
     FrameQueuePolicy policy{};
-    policy.MaxBacklogDepth = renderScale > 4 ? 5 : (renderScale > 1 ? 2 : 1);
+    policy.MaxBacklogDepth = renderScale > 1 ? 2 : 1;
     policy.AllowStealPending = false;
     policy.AllowPreviousFrameReuse = true;
     policy.AllowDropForDeadline = false;
@@ -713,7 +713,7 @@ FrameQueuePolicy makeVulkanRealtimeFrameQueuePolicy(int renderScale)
 FrameQueuePolicy makeVulkanLateRealtimeFrameQueuePolicy(int renderScale)
 {
     FrameQueuePolicy policy{};
-    policy.MaxBacklogDepth = renderScale > 4 ? 5 : (renderScale > 1 ? 2 : 1);
+    policy.MaxBacklogDepth = renderScale > 1 ? 2 : 1;
     policy.AllowStealPending = false;
     policy.AllowPreviousFrameReuse = true;
     policy.AllowDropForDeadline = true;
