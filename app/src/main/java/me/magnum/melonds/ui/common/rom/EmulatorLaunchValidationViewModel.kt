@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
@@ -45,8 +46,8 @@ class EmulatorLaunchValidationViewModel @Inject constructor(
                 if (exception is CancellationException) {
                     throw exception
                 }
-                Log.e(TAG, "ROM launch precondition check failed; continuing to guarded load", exception)
-                RomLaunchPreconditionCheckResult.Success(rom)
+                Log.e(TAG, "ROM launch precondition check failed; blocking launch", exception)
+                RomLaunchPreconditionCheckResult.BiosConfigurationIncorrect(genericInvalidConfiguration(ConsoleType.DS))
             }
             _romValidationResult.tryEmit(LaunchValidationResult.Rom(preconditionsCheckResult))
             if (preconditionsCheckResult is RomLaunchPreconditionCheckResult.Success) {
@@ -65,8 +66,8 @@ class EmulatorLaunchValidationViewModel @Inject constructor(
                 if (exception is CancellationException) {
                     throw exception
                 }
-                Log.e(TAG, "Firmware launch precondition check failed; continuing to guarded load", exception)
-                FirmwareLaunchPreconditionCheckResult.Success(consoleType)
+                Log.e(TAG, "Firmware launch precondition check failed; blocking launch", exception)
+                FirmwareLaunchPreconditionCheckResult.BiosConfigurationIncorrect(genericInvalidConfiguration(consoleType))
             }
             _romValidationResult.tryEmit(LaunchValidationResult.Firmware(preconditionsCheckResult))
             if (preconditionsCheckResult is FirmwareLaunchPreconditionCheckResult.Success) {
@@ -90,5 +91,14 @@ class EmulatorLaunchValidationViewModel @Inject constructor(
                 is LaunchValidationState.ValidatingFirmware -> validateFirmwareForLaunch(it.consoleType)
             }
         }
+    }
+
+    private fun genericInvalidConfiguration(consoleType: ConsoleType): ConfigurationDirResult {
+        return ConfigurationDirResult(
+            consoleType,
+            ConfigurationDirResult.Status.INVALID,
+            emptyArray(),
+            emptyArray(),
+        )
     }
 }

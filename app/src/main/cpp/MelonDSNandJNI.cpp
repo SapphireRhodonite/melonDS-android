@@ -49,9 +49,9 @@ Java_me_magnum_melonds_MelonDSiNand_openNand(JNIEnv* env, jobject thiz, jobject 
     Platform::FileRead(esKey, 16, 1, bios7file);
     Platform::CloseFile(bios7file);
 
-    auto nandfile = Platform::OpenLocalFile(configuration.dsiNandPath, melonDS::Platform::FileMode::ReadWriteExisting);
+    auto nandfile = Platform::OpenFile(configuration.dsiNandPath, melonDS::Platform::FileMode::ReadWriteExisting);
     if (!nandfile)
-        return false;
+        return NAND_INIT_ERROR_NAND_FAILED;
 
     nand = std::make_unique<melonDS::DSi_NAND::NANDImage>(nandfile, esKey);
     if (!*nand)

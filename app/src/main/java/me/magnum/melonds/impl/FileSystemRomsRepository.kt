@@ -79,6 +79,7 @@ class FileSystemRomsRepository(
     private val directoryStates: MutableMap<String, DirectoryCacheState> = mutableMapOf()
     private val directoryScanStatuses: MutableMap<String, RomDirectoryScanStatus> = mutableMapOf()
     private val directoryScanStatusFlow = MutableStateFlow<List<RomDirectoryScanStatus>>(emptyList())
+    private val romOptionsReadErrorNotifications: MutableSet<String> = mutableSetOf()
     @Volatile private var currentDirectoryUris: Map<String, Uri> = emptyMap()
     @Volatile private var hasUnavailableSearchDirectories = false
     private val skipNextRomDataSave = AtomicBoolean(false)
@@ -389,10 +390,9 @@ class FileSystemRomsRepository(
             }
         }.onFailure { throwable ->
             Log.w(TAG, "Failed to read ROM options for ${rom.fileName}", throwable)
-            notifyRomOptionsReadError()
-            runCatching { optionsDocument.delete() }
-            if (shouldPersistRomOptions(rom)) {
-                writeRomOptions(rom)
+            notifyRomOptionsReadError(optionsDocument)
+            runCatching { optionsDocument.delete() }.onFailure {
+                Log.w(TAG, "Failed to delete unreadable ROM options for ${rom.fileName}", it)
             }
         }.getOrNull()
     }
@@ -443,7 +443,15 @@ class FileSystemRomsRepository(
         return romFileName.replaceAfterLast('.', "opts", "$romFileName.opts")
     }
 
-    private fun notifyRomOptionsReadError() {
+    private fun notifyRomOptionsReadError(optionsDocument: DocumentFile) {
+        val notificationKey = optionsDocument.uri.toString()
+        val shouldNotify = synchronized(romOptionsReadErrorNotifications) {
+            romOptionsReadErrorNotifications.add(notificationKey)
+        }
+        if (!shouldNotify) {
+            return
+        }
+
         mainHandler.post {
             Toast.makeText(context, R.string.rom_options_read_error, Toast.LENGTH_SHORT).show()
         }

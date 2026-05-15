@@ -512,18 +512,24 @@ namespace MelonDSAndroid
      */
     void updateEmulatorConfiguration(std::unique_ptr<EmulatorConfiguration> emulatorConfiguration) {
         std::shared_ptr<EmulatorConfiguration> sharedConfig = ShareConfiguration(std::move(emulatorConfiguration));
-        instance->updateConfiguration(sharedConfig);
-        updateAudioSettings(sharedConfig->audioSettings);
-
         currentConfiguration = sharedConfig;
         rendererDebugToolsEnabled.store(ResolveRendererDebugToolsEnabled(*sharedConfig), std::memory_order_relaxed);
         rendererDebugBgObjEnabled.store(ResolveRendererDebugBgObjEnabled(*sharedConfig), std::memory_order_relaxed);
         rendererDebugLatchTraceEnabled.store(ResolveRendererDebugLatchTraceEnabled(*sharedConfig), std::memory_order_relaxed);
         vulkanDiagnosticFlags.store(ResolveVulkanDiagnosticFlags(), std::memory_order_relaxed);
+
+        if (instance == nullptr)
+            return;
+
+        instance->updateConfiguration(sharedConfig);
+        updateAudioSettings(sharedConfig->audioSettings);
     }
 
     int loadRom(std::string romPath, std::string sramPath, RomGbaSlotConfig* gbaSlotConfig)
     {
+        if (!instance)
+            return 2;
+
         if (!instance->loadRom(std::move(romPath), std::move(sramPath)))
             return 2;
 
@@ -552,7 +558,9 @@ namespace MelonDSAndroid
 
     int bootFirmware()
     {
-        // TODO: Maybe validate BIOS and firmware?
+        if (!instance)
+            return ROMManager::FIRMWARE_BAD;
+
         if (instance->bootFirmware())
             return ROMManager::SUCCESS;
         else

@@ -85,12 +85,14 @@ class RAApi(
     }
 
     suspend fun login(username: String, password: String): Result<Unit> {
+        userAuthStore.clearUserAuth()
         return get<UserLoginDto>(
             mapOf(
                 PARAMETER_REQUEST to REQUEST_LOGIN,
                 PARAMETER_USER to username,
                 PARAMETER_PASSWORD to password,
-            )
+            ),
+            clearTokenOnUnauthorized = false,
         ).onSuccess {
             userAuthStore.storeUserAuth(RAUserAuth.Authenticated(it.user, it.token))
         }.map { }
@@ -249,8 +251,9 @@ class RAApi(
     private suspend inline fun <reified T : Any> get(
         parameters: Map<String, String>,
         noinline errorHandler: (String?) -> Unit = { throw UnsuccessfulRequestException(it ?: "Unknown reason") },
+        clearTokenOnUnauthorized: Boolean = true,
     ): Result<T> {
-        return get(T::class, parameters, errorHandler)
+        return get(T::class, parameters, errorHandler, clearTokenOnUnauthorized)
     }
 
     @OptIn(InternalSerializationApi::class)
@@ -258,10 +261,11 @@ class RAApi(
         responseClass: KClass<T>,
         parameters: Map<String, String>,
         errorHandler: (String?) -> Unit = { throw UnsuccessfulRequestException(it ?: "Unknown reason") },
+        clearTokenOnUnauthorized: Boolean = true,
     ): Result<T> = withContext(Dispatchers.IO) {
         val request = buildGetRequest(parameters)
         suspendRunCatching {
-            executeRequest(request)
+            executeRequest(request, clearTokenOnUnauthorized)
         }.suspendMapCatching { response ->
             if (response.isSuccessful) {
                 val body = response.body.charStream().use { it.readText() }
@@ -275,7 +279,7 @@ class RAApi(
                     json.decodeFromJsonElement(responseClass.serializer(), responseJson)
                 }
             } else {
-                throw Exception(response.message)
+                throw UnsuccessfulRequestException("HTTP ${response.code}: ${response.message}")
             }
         }
     }
@@ -309,7 +313,7 @@ class RAApi(
                     json.decodeFromJsonElement(responseClass.serializer(), responseJson)
                 }
             } else {
-                throw Exception(response.message)
+                throw UnsuccessfulRequestException("HTTP ${response.code}: ${response.message}")
             }
         }
     }
@@ -338,7 +342,7 @@ class RAApi(
             .build()
     }
 
-    private suspend fun executeRequest(request: Request): Response = suspendCancellableCoroutine { continuation ->
+    private suspend fun executeRequest(request: Request, clearTokenOnUnauthorized: Boolean = true): Response = suspendCancellableCoroutine { continuation ->
         val call = okHttpClient.newCall(request)
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -346,7 +350,7 @@ class RAApi(
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (response.code == 401) {
+                if (response.code == 401 && clearTokenOnUnauthorized) {
                     runBlocking {
                         userAuthStore.clearUserToken()
                     }

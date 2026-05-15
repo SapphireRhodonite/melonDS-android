@@ -8,7 +8,6 @@ import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.domain.services.ConfigurationDirectoryVerifier
-import java.io.FileNotFoundException
 
 class FileSystemConfigurationDirectoryVerifier(private val context: Context, settingsRepository: SettingsRepository) : ConfigurationDirectoryVerifier(settingsRepository) {
     override fun checkDsConfigurationDirectory(directory: Uri?): ConfigurationDirResult {
@@ -26,14 +25,23 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
             return ConfigurationDirResult(consoleType, ConfigurationDirResult.Status.UNSET, requiredFiles.keys.toTypedArray(), fileResults.toTypedArray())
         }
 
-        val dirDocument = DocumentFile.fromTreeUri(context, directory)
-        if (dirDocument?.isDirectory != true) {
+        val dirDocument = runCatching {
+            DocumentFile.fromTreeUri(context, directory)
+        }.getOrNull()
+        val isDirectory = runCatching {
+            dirDocument?.isDirectory == true
+        }.getOrDefault(false)
+        if (!isDirectory) {
+            val fileResults = requiredFiles.map { it.key to ConfigurationDirResult.FileStatus.MISSING }
+            return ConfigurationDirResult(consoleType, ConfigurationDirResult.Status.INVALID, requiredFiles.keys.toTypedArray(), fileResults.toTypedArray())
+        }
+        val validDirDocument = dirDocument ?: run {
             val fileResults = requiredFiles.map { it.key to ConfigurationDirResult.FileStatus.MISSING }
             return ConfigurationDirResult(consoleType, ConfigurationDirResult.Status.INVALID, requiredFiles.keys.toTypedArray(), fileResults.toTypedArray())
         }
 
         val fileResults = requiredFiles.map {
-            it.key to it.value.invoke(dirDocument)
+            it.key to it.value.invoke(validDirDocument)
         }
 
         val result = if (fileResults.any { it.second != ConfigurationDirResult.FileStatus.PRESENT }) {
@@ -54,7 +62,7 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
 
     private fun getDSFirmwareStatus(configurationDir: DocumentFile): ConfigurationDirResult.FileStatus {
         val firmwareDocument =configurationDir.findFile("firmware.bin") ?: return ConfigurationDirResult.FileStatus.MISSING
-        return try {
+        return runCatching {
             context.contentResolver.openAssetFileDescriptor(firmwareDocument.uri, "r")?.use {
                 when (it.length) {
                     AssetFileDescriptor.UNKNOWN_LENGTH -> ConfigurationDirResult.FileStatus.MISSING
@@ -64,9 +72,7 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
                     else -> ConfigurationDirResult.FileStatus.INVALID
                 }
             } ?: ConfigurationDirResult.FileStatus.MISSING
-        } catch (e: FileNotFoundException) {
-            ConfigurationDirResult.FileStatus.MISSING
-        }
+        }.getOrDefault(ConfigurationDirResult.FileStatus.MISSING)
     }
 
     private fun getDSiBios7Status(configurationDir: DocumentFile): ConfigurationDirResult.FileStatus {
@@ -79,7 +85,7 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
 
     private fun getDSiFirmwareStatus(configurationDir: DocumentFile): ConfigurationDirResult.FileStatus {
         val firmwareDocument = configurationDir.findFile("firmware.bin") ?: return ConfigurationDirResult.FileStatus.MISSING
-        return try {
+        return runCatching {
             context.contentResolver.openAssetFileDescriptor(firmwareDocument.uri, "r")?.use {
                 when (it.length) {
                     AssetFileDescriptor.UNKNOWN_LENGTH -> ConfigurationDirResult.FileStatus.MISSING
@@ -87,19 +93,26 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
                     else -> ConfigurationDirResult.FileStatus.INVALID
                 }
             } ?: ConfigurationDirResult.FileStatus.MISSING
-        } catch (e: FileNotFoundException) {
-            ConfigurationDirResult.FileStatus.MISSING
-        }
+        }.getOrDefault(ConfigurationDirResult.FileStatus.MISSING)
     }
 
     private fun getDSiNandStatus(configurationDir: DocumentFile): ConfigurationDirResult.FileStatus {
-        val firmwareDocument = configurationDir.findFile("nand.bin")
-        return if (firmwareDocument?.isFile == true) ConfigurationDirResult.FileStatus.PRESENT else ConfigurationDirResult.FileStatus.MISSING
+        val nandDocument = configurationDir.findFile("nand.bin") ?: return ConfigurationDirResult.FileStatus.MISSING
+        val isFile = runCatching { nandDocument.isFile }.getOrDefault(false)
+        if (!isFile) {
+            return ConfigurationDirResult.FileStatus.MISSING
+        }
+
+        return runCatching {
+            context.contentResolver.openFileDescriptor(nandDocument.uri, "rw")?.use {
+                ConfigurationDirResult.FileStatus.PRESENT
+            } ?: ConfigurationDirResult.FileStatus.MISSING
+        }.getOrDefault(ConfigurationDirResult.FileStatus.MISSING)
     }
 
     private fun getBiosFileStatus(configurationDir: DocumentFile, fileName: String, requiredSize: Long): ConfigurationDirResult.FileStatus {
         val biosDocument = configurationDir.findFile(fileName) ?: return ConfigurationDirResult.FileStatus.MISSING
-        return try {
+        return runCatching {
             context.contentResolver.openAssetFileDescriptor(biosDocument.uri, "r")?.use {
                 when (it.length) {
                     AssetFileDescriptor.UNKNOWN_LENGTH -> ConfigurationDirResult.FileStatus.MISSING
@@ -107,9 +120,7 @@ class FileSystemConfigurationDirectoryVerifier(private val context: Context, set
                     else -> ConfigurationDirResult.FileStatus.INVALID
                 }
             } ?: ConfigurationDirResult.FileStatus.MISSING
-        } catch (e: FileNotFoundException) {
-            ConfigurationDirResult.FileStatus.MISSING
-        }
+        }.getOrDefault(ConfigurationDirResult.FileStatus.MISSING)
     }
 
     private fun getRequiredFilesVerifiers(consoleType: ConsoleType): Map<String, (DocumentFile) -> ConfigurationDirResult.FileStatus> {

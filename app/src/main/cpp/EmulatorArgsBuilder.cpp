@@ -25,7 +25,7 @@ std::unique_ptr<ARM9BIOSImage> loadARM9BIOS(const EmulatorConfiguration& configu
 
     std::string path = configuration.dsBios9Path;
 
-    if (FileHandle* f = OpenLocalFile(path, Read))
+    if (FileHandle* f = OpenFile(path, Read))
     {
         std::unique_ptr<ARM9BIOSImage> bios = std::make_unique<ARM9BIOSImage>();
         FileRewind(f);
@@ -48,7 +48,7 @@ std::unique_ptr<ARM7BIOSImage> loadARM7BIOS(const EmulatorConfiguration& configu
 
     std::string path = configuration.dsBios7Path;
 
-    if (FileHandle* f = OpenLocalFile(path, Read))
+    if (FileHandle* f = OpenFile(path, Read))
     {
         std::unique_ptr<ARM7BIOSImage> bios = std::make_unique<ARM7BIOSImage>();
         FileRead(bios->data(), bios->size(), 1, f);

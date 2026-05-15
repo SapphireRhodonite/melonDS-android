@@ -177,8 +177,14 @@ class RomDetailsViewModel @Inject constructor(
     fun refreshRom() {
         viewModelScope.launch {
             val refreshedRom = romsRepository.getRomAtUri(_rom.value.uri) ?: return@launch
-            _rom.value = refreshedRom
-            _romConfig.value = refreshedRom.config
+            val currentConfig = _romConfig.value
+            val refreshedConfig = if (isDefaultConfig(refreshedRom) && !isDefaultConfig(_rom.value.copy(config = currentConfig))) {
+                currentConfig
+            } else {
+                refreshedRom.config
+            }
+            _rom.value = refreshedRom.copy(config = refreshedConfig)
+            _romConfig.value = refreshedConfig
         }
     }
 
@@ -201,5 +207,14 @@ class RomDetailsViewModel @Inject constructor(
             VideoRenderer.VULKAN -> filtering.isSupportedByVulkan()
             else -> filtering.isSupportedByOpenGlSurface()
         }
+    }
+
+    private fun isDefaultConfig(rom: Rom): Boolean {
+        val defaultConfig = if (rom.isDsiWareTitle) {
+            RomConfig.forDsiWareTitle()
+        } else {
+            RomConfig.default()
+        }
+        return rom.config == defaultConfig
     }
 }

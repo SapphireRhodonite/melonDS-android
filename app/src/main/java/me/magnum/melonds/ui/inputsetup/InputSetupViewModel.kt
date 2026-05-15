@@ -2,11 +2,13 @@ package me.magnum.melonds.ui.inputsetup
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import me.magnum.melonds.domain.model.ControllerConfiguration
 import me.magnum.melonds.domain.model.Input
 import me.magnum.melonds.domain.model.InputConfig
@@ -47,6 +49,24 @@ class InputSetupViewModel @Inject constructor(
 
     private val _onInputAssignedEvent = EventSharedFlow<Input>()
     val onInputAssignedEvent = _onInputAssignedEvent.asSharedFlow()
+
+    private var hasLocalChanges = false
+
+    init {
+        rom?.let { initialRom ->
+            viewModelScope.launch {
+                val refreshedRom = romsRepository.getRomAtUri(initialRom.uri) ?: return@launch
+                if (hasLocalChanges) {
+                    return@launch
+                }
+                val refreshedConfiguration = refreshedRom.config.customControllerConfiguration
+                    ?: settingsRepository.getControllerConfiguration()
+                rom = refreshedRom
+                _inputConfig.value = refreshedConfiguration.copy().inputMapper
+                _slot2AnalogMapping.value = refreshedConfiguration.slot2AnalogMapping
+            }
+        }
+    }
 
     fun startInputAssignment(input: Input) {
         _slot2AxisUnderAssignment.value = null
@@ -180,6 +200,7 @@ class InputSetupViewModel @Inject constructor(
             configList = newConfig,
             slot2AnalogMapping = newMapping,
         )
+        hasLocalChanges = true
         val currentRom = rom
         if (currentRom != null) {
             val updatedConfig = currentRom.config.copy(
