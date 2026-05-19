@@ -257,12 +257,14 @@ object MelonModule {
 
     @Provides
     fun provideRomLaunchPreconditionChecker(
+        @ApplicationContext context: Context,
         configurationDirectoryVerifier: ConfigurationDirectoryVerifier,
         romFileProcessorFactory: RomFileProcessorFactory,
         dsiNandManager: DSiNandManager,
         settingsRepository: SettingsRepository,
     ): EmulatorLaunchPreconditionChecker {
         return EmulatorLaunchPreconditionChecker(
+            context = context,
             configurationDirectoryVerifier = configurationDirectoryVerifier,
             romFileProcessorFactory = romFileProcessorFactory,
             dsiNandManager = dsiNandManager,

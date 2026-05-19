@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.4.1)
+if (POLICY CMP0079)
+    cmake_policy(SET CMP0079 NEW)
+endif()
 
 project(melonDS-android-frontend)
 
@@ -10,6 +13,8 @@ else()
     add_compile_definitions(MELONDS_ANDROID_DEBUG_BUILD=0)
 endif()
 
+option(MELONDS_ENABLE_ADRENOTOOLS "Enable libadrenotools custom Adreno Vulkan driver support" OFF)
+
 set(BUILD_QT_SDL OFF)
 set(ENABLE_GDBSTUB OFF)
 
@@ -19,6 +24,21 @@ set(VULKAN_SPIRV_REGEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/regenerate
 set(LIBRASHADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/generated/librashader")
 set(LIBRASHADER_INCLUDE_DIR "${LIBRASHADER_ROOT}/include")
 set(LIBRASHADER_LIBRARY "${LIBRASHADER_ROOT}/jniLibs/${ANDROID_ABI}/liblibrashader.so")
+
+set(MELONDS_HAS_ADRENOTOOLS OFF)
+if (MELONDS_ENABLE_ADRENOTOOLS AND ANDROID_ABI STREQUAL "arm64-v8a")
+    include(FetchContent)
+    FetchContent_Declare(
+            libadrenotools
+            GIT_REPOSITORY https://github.com/bylaws/libadrenotools.git
+            GIT_TAG 8fae8ce254dfc1344527e05301e43f37dea2df80
+            GIT_SHALLOW TRUE
+            GIT_SUBMODULES_RECURSE TRUE
+    )
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(libadrenotools)
+    set(MELONDS_HAS_ADRENOTOOLS ON)
+endif()
 
 if (NOT EXISTS "${LIBRASHADER_INCLUDE_DIR}/librashader.h" OR NOT EXISTS "${LIBRASHADER_LIBRARY}")
     message(FATAL_ERROR "librashader artifacts are missing. Run ./gradlew :app:buildLibrashaderAndroid first; Gradle builds the pinned source with Rust/cargo and the Android NDK.")
@@ -101,6 +121,13 @@ add_custom_target(regenerate_vulkan_spirv_headers DEPENDS ${VULKAN_SHADER_HEADER
 add_subdirectory("${CORE_LIB_DIR}" ./melonDS-android-lib)
 if (TARGET core)
     add_dependencies(core regenerate_vulkan_spirv_headers)
+    target_compile_definitions(core PUBLIC VK_NO_PROTOTYPES)
+    if (MELONDS_HAS_ADRENOTOOLS)
+        target_compile_definitions(core PUBLIC MELONDS_HAS_ADRENOTOOLS=1)
+        target_link_libraries(core PUBLIC adrenotools)
+    else()
+        target_compile_definitions(core PUBLIC MELONDS_HAS_ADRENOTOOLS=0)
+    endif()
 endif()
 
 add_subdirectory("${ANDROID_CPP_DIR}/oboe" ./oboe)
@@ -155,6 +182,7 @@ add_library(
 )
 
 add_dependencies(melonDS-android-frontend regenerate_vulkan_spirv_headers)
+target_compile_definitions(melonDS-android-frontend PRIVATE VK_NO_PROTOTYPES)
 
 target_include_directories(melonDS-android-frontend PUBLIC
         "${ANDROID_CPP_DIR}"
@@ -169,12 +197,10 @@ target_include_directories(melonDS-android-frontend PUBLIC
 )
 
 find_library(android-lib android)
-find_library(vulkan-lib vulkan)
 find_library(jnigraphics-lib jnigraphics)
 
 target_link_libraries(melonDS-android-frontend
         ${android-lib}
-        ${vulkan-lib}
         ${jnigraphics-lib}
         core
         net-utils
@@ -184,4 +210,9 @@ target_link_libraries(melonDS-android-frontend
         EGL
         GLESv3
         librashader
+        dl
 )
+
+if (MELONDS_HAS_ADRENOTOOLS)
+    add_dependencies(melonDS-android-frontend main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+endif()

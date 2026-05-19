@@ -45,6 +45,7 @@ interface SettingsRepository {
     fun useCustomBios(): Boolean
     fun getDsBiosDirectory(): Uri?
     fun getDsiBiosDirectory(): Uri?
+    fun clearBiosDirectories()
     fun isDldiSdCardEnabled(): Boolean
     fun getDldiSdCardDirectory(): Uri?
     fun getDldiSdCardImageSize(): Int
@@ -55,6 +56,16 @@ interface SettingsRepository {
     fun getEffectiveVideoRenderer(romConfig: RomConfig): VideoRenderer
     fun setCurrentVideoRenderer(renderer: VideoRenderer)
     fun getVideoRenderer(): Flow<VideoRenderer>
+    fun getVulkanDriverConfiguration(nativeLibraryDir: String): VulkanDriverConfiguration
+    fun getVulkanDriverMode(): VulkanDriverMode
+    fun setVulkanDriverMode(mode: VulkanDriverMode)
+    fun getInstalledVulkanDrivers(): List<VulkanDriverInfo>
+    fun getSelectedVulkanDriverId(): String?
+    fun setSelectedVulkanDriver(id: String)
+    fun getCustomVulkanDriverDisplayName(): String?
+    fun setCustomVulkanDriver(id: String, driverDir: String, driverName: String, displayName: String)
+    fun removeCustomVulkanDriver(id: String)
+    fun clearCustomVulkanDrivers()
     fun getVideoInternalResolutionScaling(): Flow<Int>
     fun getVideoFiltering(): Flow<VideoFiltering>
     fun isThreadedRenderingEnabled(): Flow<Boolean>

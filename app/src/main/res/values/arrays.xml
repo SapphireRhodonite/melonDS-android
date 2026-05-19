@@ -59,6 +59,11 @@
         <item>retroarch</item>
     </string-array>
 
+    <string-array name="video_vulkan_driver_mode_values">
+        <item>system</item>
+        <item>custom</item>
+    </string-array>
+
     <string-array name="dsi_camera_source_values">
         <item>black_screen</item>
         <item>physical_cameras</item>

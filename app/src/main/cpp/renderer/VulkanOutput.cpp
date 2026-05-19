@@ -14,6 +14,7 @@
 #include "NDS.h"
 #include "Platform.h"
 #include "VulkanContext.h"
+#include "VulkanDispatch.h"
 #include "VulkanCompositorShaderData.h"
 #include "VulkanAccumulate3dShaderData.h"
 

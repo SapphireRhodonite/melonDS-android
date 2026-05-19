@@ -163,7 +163,8 @@
     <string name="rom_cache_status_just_now">just now</string>
 
     <string name="rom_launch_failed">Failed to launch ROM</string>
-    <string name="rom_launch_custom_bios_firmware_bad_setup">This ROM is set to run using a custom BIOS and firmware, but it\'s not properly configured.</string>
+    <string name="rom_launch_custom_bios_firmware_bad_setup">This ROM needs BIOS or firmware settings that are not available. Open settings to reconfigure them, or delete the saved BIOS paths and try the internal DS firmware when possible.</string>
+    <string name="delete_bios_paths">Delete BIOS paths</string>
     <string name="firmware_launch_failed">Failed to launch the firmware</string>
     <string name="firmware_launch_bad_setup">To launch this firmware, a custom BIOS and firmware is required, but it\'s not properly configured.</string>
     <string name="failed_launch_dsiware_title">Failed to launch DSiWare title</string>
@@ -227,6 +228,16 @@
     <string name="rom_action_favorite">Add to favorites</string>
     <string name="rom_action_unfavorite">Remove from favorites</string>
     <string name="rom_action_details">Details</string>
+    <string name="rom_action_send_save_file">Send save file</string>
+    <string name="rom_action_import_save_file">Import save file</string>
+    <string name="rom_save_file_share_chooser">Send save file</string>
+    <string name="rom_save_file_missing">No save file found for this game.</string>
+    <string name="rom_save_file_share_failed">Could not share save file.</string>
+    <string name="rom_save_file_import_title">Import save file?</string>
+    <string name="rom_save_file_import_message">This file will replace the save file for %1$s. If it is not a save for this game, it may not work.</string>
+    <string name="rom_save_file_import_invalid">This file does not look like an importable DS save file.</string>
+    <string name="rom_save_file_import_success">Save file imported.</string>
+    <string name="rom_save_file_import_failed">Could not import save file.</string>
     <string name="rom_view_toggle">Toggle grid/list</string>
     <string name="rom_config">ROM configuration</string>
     <string name="rom_sorting_most_played">Most played</string>
@@ -302,6 +313,24 @@
     <string name="renderer_debug_capture">Dump renderer capture</string>
     <string name="renderer_debug_capture_logged">Renderer capture dumped to Logcat. Capture ID: %1$s</string>
     <string name="renderer_debug_capture_failed">Renderer capture could not be dumped. Check that Renderer debug tools is enabled.</string>
+    <string name="video_vulkan_driver_category">Vulkan driver</string>
+    <string name="video_vulkan_driver_mode">Adreno Vulkan driver</string>
+    <string name="video_vulkan_driver_import">Import custom driver</string>
+    <string name="video_vulkan_driver_import_summary">Install a driver ZIP. Changes apply the next time a game starts.</string>
+    <string name="video_vulkan_driver_remove">Remove custom driver</string>
+    <string name="video_vulkan_driver_remove_summary">Delete installed custom drivers.</string>
+    <string name="video_vulkan_driver_unsupported">Custom Adreno drivers are only available in the GitHub arm64 build on Android 9 or newer.</string>
+    <string name="video_vulkan_driver_no_custom">Import a custom driver before selecting this option.</string>
+    <string name="video_vulkan_driver_active_system">Using Android system Vulkan driver.</string>
+    <string name="video_vulkan_driver_active_custom">Using %1$s when Vulkan starts.</string>
+    <string name="video_vulkan_driver_import_success">Installed Vulkan driver: %1$s.</string>
+    <string name="video_vulkan_driver_import_failed">Could not import Vulkan driver ZIP.</string>
+    <string name="video_vulkan_driver_import_not_zip">Select a .zip driver package.</string>
+    <string name="video_vulkan_driver_import_no_driver">The ZIP does not contain a supported Vulkan driver library.</string>
+    <string name="video_vulkan_driver_import_ambiguous">The ZIP contains multiple Vulkan driver libraries. Use a package with a single driver.</string>
+    <string name="video_vulkan_driver_removed">Removed Vulkan driver: %1$s.</string>
+    <string name="video_vulkan_driver_mode_system">Android system driver</string>
+    <string name="video_vulkan_driver_mode_options_custom_fallback">Custom driver</string>
     <string name="renderer_2d_debug_controls">2D renderer controls</string>
     <string name="renderer_2d_debug_controls_reset">Reset 2D controls</string>
     <string name="renderer_3d_debug_controls">3D renderer controls</string>
@@ -817,6 +846,11 @@
         <item>LCD</item>
         <item>Scanlines</item>
         <item>RetroArch (.slangp)</item>
+    </string-array>
+
+    <string-array name="video_vulkan_driver_mode_options">
+        <item>System</item>
+        <item>Custom</item>
     </string-array>
 
     <string name="video_retroarch_shader_root_title">RetroArch shader root</string>

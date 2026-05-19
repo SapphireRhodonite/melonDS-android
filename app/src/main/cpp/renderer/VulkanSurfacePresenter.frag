@@ -1184,6 +1184,13 @@ void main()
         return;
     }
 
+    if (pushConstants.drawMode == 6u)
+    {
+        vec4 sampledColor = texture(uTexture, fragUv);
+        outColor = vec4(sampledColor.rgb, fragAlpha);
+        return;
+    }
+
     if (pushConstants.drawMode == 4u || pushConstants.drawMode == 5u)
     {
         bool topScreen = pushConstants.drawMode == 4u;

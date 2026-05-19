@@ -92,6 +92,9 @@ class EmulatorLaunchValidatorDelegate(
                 }
                 firmwareSettingsLauncher.launch(intent)
             }
+            .setNeutralButton(R.string.delete_bios_paths) { _, _ ->
+                viewModel.clearBiosDirectoriesAndRetry()
+            }
             .setNegativeButton(R.string.cancel) { _, _ -> callback.onValidationAborted() }
             .setOnCancelListener { callback.onValidationAborted() }
             .show()

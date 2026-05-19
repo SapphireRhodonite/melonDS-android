@@ -102,6 +102,8 @@
     <string name="incorrect_bios_dir">Directorio de BIOS incorrecto</string>
     <string name="ds_incorrect_bios_dir_info">El directorio BIOS para el sistema DS no es correcto. Asegúrese de que el directorio seleccionado contenga los siguientes archivos:\n&#8226; bios7.bin\n&#8226; bios9.bin\n&#8226; firmware.bin</string>
     <string name="dsi_incorrect_bios_dir_info">El directorio BIOS para el sistema DSi no es correcto. Asegúrese de que el directorio seleccionado que contiene los siguientes archivos:\n&#8226; bios7.bin\n&#8226; bios9.bin\n&#8226; firmware.bin\n&#8226; nand.bin</string>
+    <string name="rom_launch_custom_bios_firmware_bad_setup">Esta ROM necesita ajustes de BIOS o firmware que no están disponibles. Abre ajustes para reconfigurarlos, o elimina las rutas BIOS guardadas e intenta usar el firmware interno de DS cuando sea posible.</string>
+    <string name="delete_bios_paths">Eliminar rutas BIOS</string>
     <string name="storage_permission_required">Se requiere permiso de almacenamiento</string>
     <string name="storage_permission_required_info">Se requiere permiso de almacenamiento para cargar la ROM. Conceda acceso al almacenamiento en el siguiente cuadro de diálogo.</string>
     <string name="microphone_permission_required">Se requiere permiso de grabación de audio</string>
@@ -217,6 +219,34 @@
     <string name="audio_latency">Latencia de audio</string>
     <string name="microphone_source">Fuente de micrófono</string>
     <string name="controller_layout">Disposición del controlador</string>
+    <string name="video_vulkan_driver_category">Driver Vulkan</string>
+    <string name="video_vulkan_driver_mode">Driver Vulkan Adreno</string>
+    <string name="video_vulkan_driver_import">Importar driver personalizado</string>
+    <string name="video_vulkan_driver_import_summary">Instala un ZIP de driver. Los cambios aplican al iniciar el siguiente juego.</string>
+    <string name="video_vulkan_driver_remove">Eliminar driver personalizado</string>
+    <string name="video_vulkan_driver_remove_summary">Elimina drivers personalizados instalados.</string>
+    <string name="video_vulkan_driver_unsupported">Los drivers Adreno personalizados solo están disponibles en el build GitHub arm64 con Android 9 o superior.</string>
+    <string name="video_vulkan_driver_no_custom">Importa un driver personalizado antes de seleccionar esta opción.</string>
+    <string name="video_vulkan_driver_active_system">Usando el driver Vulkan del sistema Android.</string>
+    <string name="video_vulkan_driver_active_custom">Usando %1$s al iniciar Vulkan.</string>
+    <string name="video_vulkan_driver_import_success">Driver Vulkan instalado: %1$s.</string>
+    <string name="video_vulkan_driver_import_failed">No se pudo importar el ZIP del driver Vulkan.</string>
+    <string name="video_vulkan_driver_import_not_zip">Selecciona un paquete de driver .zip.</string>
+    <string name="video_vulkan_driver_import_no_driver">El ZIP no contiene una librería de driver Vulkan compatible.</string>
+    <string name="video_vulkan_driver_import_ambiguous">El ZIP contiene varios drivers Vulkan. Usa un paquete con un solo driver.</string>
+    <string name="video_vulkan_driver_removed">Driver Vulkan eliminado: %1$s.</string>
+    <string name="video_vulkan_driver_mode_system">Driver del sistema Android</string>
+    <string name="video_vulkan_driver_mode_options_custom_fallback">Driver personalizado</string>
+    <string name="rom_action_send_save_file">Enviar archivo de guardado</string>
+    <string name="rom_action_import_save_file">Importar archivo de guardado</string>
+    <string name="rom_save_file_share_chooser">Enviar archivo de guardado</string>
+    <string name="rom_save_file_missing">No se encontró un archivo de guardado para este juego.</string>
+    <string name="rom_save_file_share_failed">No se pudo compartir el archivo de guardado.</string>
+    <string name="rom_save_file_import_title">¿Importar archivo de guardado?</string>
+    <string name="rom_save_file_import_message">Este archivo reemplazará el archivo de guardado de %1$s. Si no es un guardado para este juego, puede no funcionar.</string>
+    <string name="rom_save_file_import_invalid">Este archivo no parece ser un guardado de DS importable.</string>
+    <string name="rom_save_file_import_success">Archivo de guardado importado.</string>
+    <string name="rom_save_file_import_failed">No se pudo importar el archivo de guardado.</string>
     <string name="category_save_files">Archivos de guardado</string>
     <string name="category_save_files_summary">Ubicaciones de archivos de guardado &amp; estados de guardado</string>
     <string name="save_next_rom">Guardar junto al archivo ROM</string>
@@ -437,6 +467,11 @@
         <item>LCD</item>
         <item>Líneas de escaneo</item>
         <item>RetroArch (.slangp)</item>
+    </string-array>
+
+    <string-array name="video_vulkan_driver_mode_options">
+        <item>Sistema</item>
+        <item>Personalizado</item>
     </string-array>
 
     <string-array name="dsi_camera_source_options">

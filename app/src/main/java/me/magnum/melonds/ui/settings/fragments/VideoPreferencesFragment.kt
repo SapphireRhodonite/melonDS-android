@@ -6,6 +6,8 @@ import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.core.content.getSystemService
 import androidx.documentfile.provider.DocumentFile
@@ -13,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
 import androidx.preference.SwitchPreference
 import dagger.hilt.android.AndroidEntryPoint
 import me.magnum.melonds.domain.repositories.SettingsRepository
@@ -24,6 +27,8 @@ import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.DualScreenPreset
 import me.magnum.melonds.domain.model.ScreenAlignment
+import me.magnum.melonds.domain.model.VulkanDriverInfo
+import me.magnum.melonds.domain.model.VulkanDriverMode
 import me.magnum.melonds.domain.model.camera.DSiCameraSourceType
 import me.magnum.melonds.domain.model.defaultExternalAlignment
 import me.magnum.melonds.domain.model.defaultInternalAlignment
@@ -33,6 +38,7 @@ import me.magnum.melonds.ui.settings.SettingsActivity
 import me.magnum.melonds.ui.settings.preferences.InGameLockedListPreference
 import me.magnum.melonds.ui.settings.preferences.StoragePickerPreference
 import me.magnum.melonds.extensions.addOnPreferenceChangeListener
+import me.magnum.melonds.impl.AdrenoVulkanDriverManager
 import me.magnum.melonds.utils.enumValueOfIgnoreCase
 import androidx.appcompat.app.AlertDialog
 import android.widget.ArrayAdapter
@@ -55,6 +61,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
 
     private companion object {
         const val GLES_3_2 = 0x30002
+        const val VULKAN_SYSTEM_DRIVER_VALUE = "system"
     }
 
     private val helper by lazy { PreferenceFragmentHelper(this, uriPermissionManager, directoryAccessValidator) }
@@ -69,10 +76,16 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private val coverageFixPreferences = mutableListOf<Preference>()
 
     private lateinit var dualScreenPresetsPreference: Preference
+    private lateinit var adrenoVulkanDriverManager: AdrenoVulkanDriverManager
     private var retroArchPresetScanJob: Job? = null
+    private val vulkanDriverImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@registerForActivityResult
+        handleVulkanDriverImport(uri)
+    }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_video, rootKey)
+        adrenoVulkanDriverManager = AdrenoVulkanDriverManager(requireContext(), settingsRepository)
 
         val launchedInGame = requireActivity().intent.getBooleanExtra(SettingsActivity.KEY_IN_GAME, false)
         val rendererPreference = findPreference<InGameLockedListPreference>("video_renderer")!!
@@ -117,6 +130,10 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         val retroArchShaderPresetPreference = findPreference<ListPreference>("video_retroarch_shader_preset")!!
         val retroArchShaderParametersPreference = findPreference<EditTextPreference>("video_retroarch_shader_parameters")!!
         val retroArchShaderClearHistoryPreference = findPreference<SwitchPreference>("video_retroarch_shader_clear_history")!!
+        val vulkanDriverCategory = findPreference<PreferenceCategory>("video_vulkan_driver_category")!!
+        val vulkanDriverModePreference = findPreference<ListPreference>("video_vulkan_driver_mode")!!
+        val vulkanDriverImportPreference = findPreference<Preference>("video_vulkan_driver_import")!!
+        val vulkanDriverRemovePreference = findPreference<Preference>("video_vulkan_driver_remove")!!
         dualScreenPresetsPreference = findPreference("dual_screen_presets")!!
         val allFilteringValues = resources.getStringArray(R.array.video_filtering_values)
         val allFilteringEntries = resources.getStringArray(R.array.video_filtering_options)
@@ -149,6 +166,9 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                 val rendererValue = newValue as String
                 val newRenderer = enumValueOfIgnoreCase<VideoRenderer>(rendererValue)
                 if (newRenderer == VideoRenderer.VULKAN) {
+                    MelonDSAndroidInterface.configureVulkanDriver(
+                        settingsRepository.getVulkanDriverConfiguration(requireContext().applicationInfo.nativeLibraryDir)
+                    )
                     val canUseVulkan = MelonDSAndroidInterface.isVulkanRendererSupported()
                     if (!canUseVulkan) {
                         showVulkanUnavailableDialog()
@@ -165,6 +185,14 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     retroArchShaderClearHistoryPreference = retroArchShaderClearHistoryPreference,
                     allFilteringValues = allFilteringValues,
                     allFilteringEntries = allFilteringEntries,
+                )
+                updateVulkanDriverPreferenceState(
+                    renderer = newRenderer,
+                    category = vulkanDriverCategory,
+                    modePreference = vulkanDriverModePreference,
+                    importPreference = vulkanDriverImportPreference,
+                    removePreference = vulkanDriverRemovePreference,
+                    launchedInGame = launchedInGame,
                 )
                 true
             }
@@ -184,6 +212,14 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         helper.setupStoragePickerPreference(retroArchShaderRootPreference)
         helper.bindPreferenceSummaryToValue(retroArchShaderPresetPreference)
         helper.bindPreferenceSummaryToValue(retroArchShaderParametersPreference)
+        setupVulkanDriverPreferences(
+            renderer = enumValueOfIgnoreCase(rendererPreference.value),
+            category = vulkanDriverCategory,
+            modePreference = vulkanDriverModePreference,
+            importPreference = vulkanDriverImportPreference,
+            removePreference = vulkanDriverRemovePreference,
+            launchedInGame = launchedInGame,
+        )
         retroArchShaderRootPreference.addOnPreferenceChangeListener { _, newValue ->
             val rootUri = (newValue as? Set<*>)
                 ?.firstOrNull()
@@ -228,6 +264,184 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         )
         updateDsiCameraImagePreference(dsiCameraImagePreference, dsiCameraSourcePreference.value)
         updateDualScreenPresetSummary()
+    }
+
+    private fun setupVulkanDriverPreferences(
+        renderer: VideoRenderer,
+        category: PreferenceCategory,
+        modePreference: ListPreference,
+        importPreference: Preference,
+        removePreference: Preference,
+        launchedInGame: Boolean,
+    ) {
+        modePreference.isPersistent = false
+        modePreference.setOnPreferenceClickListener {
+            showVulkanDriverSelectionDialog(modePreference, removePreference)
+            true
+        }
+
+        importPreference.setOnPreferenceClickListener {
+            vulkanDriverImportLauncher.launch(
+                arrayOf(
+                    "application/zip",
+                    "application/x-zip-compressed",
+                    "application/octet-stream",
+                    "application/x-compressed",
+                )
+            )
+            true
+        }
+
+        removePreference.setOnPreferenceClickListener {
+            showRemoveVulkanDriverDialog(modePreference, removePreference)
+            true
+        }
+
+        updateVulkanDriverPreferenceState(
+            renderer = renderer,
+            category = category,
+            modePreference = modePreference,
+            importPreference = importPreference,
+            removePreference = removePreference,
+            launchedInGame = launchedInGame,
+        )
+    }
+
+    private fun updateVulkanDriverPreferenceState(
+        renderer: VideoRenderer,
+        category: PreferenceCategory,
+        modePreference: ListPreference,
+        importPreference: Preference,
+        removePreference: Preference,
+        launchedInGame: Boolean,
+    ) {
+        val visible = renderer == VideoRenderer.VULKAN && adrenoVulkanDriverManager.isSupported
+        category.isVisible = visible
+        if (!visible) {
+            return
+        }
+
+        listOf(modePreference, importPreference, removePreference).forEach {
+            it.isEnabled = !launchedInGame
+        }
+        category.summary = if (launchedInGame) {
+            getString(R.string.video_setting_cannot_change_ingame)
+        } else {
+            null
+        }
+        updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
+    }
+
+    private fun showVulkanDriverSelectionDialog(
+        modePreference: ListPreference,
+        removePreference: Preference,
+    ) {
+        val installedDrivers = settingsRepository.getInstalledVulkanDrivers()
+        val values = listOf(VULKAN_SYSTEM_DRIVER_VALUE) + installedDrivers.map { it.id }
+        val entries = listOf(getString(R.string.video_vulkan_driver_mode_system)) +
+            installedDrivers.map { it.displayName }
+        val selectedValue = modePreference.value ?: VULKAN_SYSTEM_DRIVER_VALUE
+        val checkedIndex = values.indexOf(selectedValue).takeIf { it >= 0 } ?: 0
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.video_vulkan_driver_mode)
+            .setSingleChoiceItems(entries.toTypedArray(), checkedIndex) { dialog, which ->
+                val value = values[which]
+                if (value == VULKAN_SYSTEM_DRIVER_VALUE) {
+                    settingsRepository.setVulkanDriverMode(VulkanDriverMode.SYSTEM)
+                } else {
+                    settingsRepository.setSelectedVulkanDriver(value)
+                }
+                updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun handleVulkanDriverImport(uri: Uri) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { adrenoVulkanDriverManager.importDriver(uri) }
+            }
+            result.onSuccess { importResult ->
+                val modePreference = findPreference<ListPreference>("video_vulkan_driver_mode") ?: return@onSuccess
+                val removePreference = findPreference<Preference>("video_vulkan_driver_remove") ?: return@onSuccess
+                updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.video_vulkan_driver_import_success, importResult.displayName),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }.onFailure { throwable ->
+                val messageRes = when ((throwable as? AdrenoVulkanDriverManager.ImportException)?.reason) {
+                    AdrenoVulkanDriverManager.ImportException.Reason.NotZip -> R.string.video_vulkan_driver_import_not_zip
+                    AdrenoVulkanDriverManager.ImportException.Reason.NoDriver -> R.string.video_vulkan_driver_import_no_driver
+                    AdrenoVulkanDriverManager.ImportException.Reason.AmbiguousDriver -> R.string.video_vulkan_driver_import_ambiguous
+                    AdrenoVulkanDriverManager.ImportException.Reason.UnsupportedBuild -> R.string.video_vulkan_driver_unsupported
+                    else -> R.string.video_vulkan_driver_import_failed
+                }
+                Toast.makeText(requireContext(), messageRes, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun updateVulkanDriverPreferenceSummaries(
+        modePreference: ListPreference,
+        removePreference: Preference,
+    ) {
+        val installedDrivers = settingsRepository.getInstalledVulkanDrivers()
+        val selectedDriverId = settingsRepository.getSelectedVulkanDriverId()
+        val useCustomDriver = settingsRepository.getVulkanDriverMode() == VulkanDriverMode.CUSTOM &&
+            selectedDriverId != null &&
+            installedDrivers.any { it.id == selectedDriverId }
+        modePreference.entryValues = arrayOf(VULKAN_SYSTEM_DRIVER_VALUE) + installedDrivers.map { it.id }.toTypedArray()
+        modePreference.entries = arrayOf(getString(R.string.video_vulkan_driver_mode_system)) +
+            installedDrivers.map { it.displayName }.toTypedArray()
+        modePreference.value = if (useCustomDriver) selectedDriverId else VULKAN_SYSTEM_DRIVER_VALUE
+        modePreference.summary = if (useCustomDriver) {
+            getString(
+                R.string.video_vulkan_driver_active_custom,
+                installedDrivers.first { it.id == selectedDriverId }.displayName,
+            )
+        } else {
+            getString(R.string.video_vulkan_driver_active_system)
+        }
+        removePreference.isEnabled = installedDrivers.isNotEmpty() && modePreference.isEnabled
+    }
+
+    private fun showRemoveVulkanDriverDialog(
+        modePreference: ListPreference,
+        removePreference: Preference,
+    ) {
+        val installedDrivers = settingsRepository.getInstalledVulkanDrivers()
+        if (installedDrivers.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.video_vulkan_driver_no_custom, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.video_vulkan_driver_remove)
+            .setItems(installedDrivers.map { it.displayName }.toTypedArray()) { _, which ->
+                val driver = installedDrivers[which]
+                removeVulkanDriver(driver, modePreference, removePreference)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun removeVulkanDriver(
+        driver: VulkanDriverInfo,
+        modePreference: ListPreference,
+        removePreference: Preference,
+    ) {
+        adrenoVulkanDriverManager.removeDriver(driver.id)
+        updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
+        Toast.makeText(
+            requireContext(),
+            getString(R.string.video_vulkan_driver_removed, driver.displayName),
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     override fun onDisplayPreferenceDialog(preference: Preference) {

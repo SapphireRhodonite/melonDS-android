@@ -1,11 +1,16 @@
 package me.magnum.melonds.ui.romlist
 
+import android.content.ClipData
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,12 +21,18 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import me.magnum.melonds.domain.model.RomScanningStatus
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.repositories.SettingsRepository
+import me.magnum.melonds.impl.RomSaveFileManager
 import me.magnum.melonds.parcelables.RomParcelable
+import me.magnum.melonds.R
 import me.magnum.melonds.ui.romdetails.RomDetailsActivity
 import me.magnum.melonds.ui.romlist.composables.RomBrowserScreen
 import me.magnum.melonds.ui.romlist.composables.RomContextMenu
@@ -49,11 +60,22 @@ class RomListFragment : Fragment() {
     }
 
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var romSaveFileManager: RomSaveFileManager
 
     private val romListViewModel: RomListViewModel by activityViewModels()
     private lateinit var backPressedCallback: OnBackPressedCallback
 
     private var romSelectedListener: ((Rom) -> Unit)? = null
+    private var pendingSaveImportRom: Rom? = null
+
+    private val saveFileImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val rom = pendingSaveImportRom
+        pendingSaveImportRom = null
+
+        if (uri != null && rom != null) {
+            validateAndConfirmSaveImport(rom, uri)
+        }
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val allowRomConfiguration = arguments?.getBoolean(KEY_ALLOW_ROM_CONFIGURATION) ?: true
@@ -111,6 +133,8 @@ class RomListFragment : Fragment() {
                         onDismiss = { contextRomUri = null },
                         onToggleFavorite = { rom -> romListViewModel.toggleFavorite(rom) },
                         onShowDetails = { rom -> openRomDetails(rom) },
+                        onSendSaveFile = { rom -> shareSaveFile(rom) },
+                        onImportSaveFile = { rom -> requestSaveFileImport(rom) },
                     )
                 }
             }
@@ -122,6 +146,80 @@ class RomListFragment : Fragment() {
             putExtra(RomDetailsActivity.KEY_ROM, RomParcelable(rom))
         }
         startActivity(intent)
+    }
+
+    private fun shareSaveFile(rom: Rom) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val sharedSaveFile = runCatching {
+                withContext(Dispatchers.IO) {
+                    romSaveFileManager.prepareShareFile(rom)
+                }
+            }.getOrElse {
+                Toast.makeText(requireContext(), R.string.rom_save_file_share_failed, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            if (sharedSaveFile == null) {
+                Toast.makeText(requireContext(), R.string.rom_save_file_missing, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_STREAM, sharedSaveFile.uri)
+                putExtra(Intent.EXTRA_TITLE, sharedSaveFile.fileName)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = ClipData.newUri(requireContext().contentResolver, sharedSaveFile.fileName, sharedSaveFile.uri)
+            }
+            val chooser = Intent.createChooser(shareIntent, getString(R.string.rom_save_file_share_chooser))
+            runCatching { startActivity(chooser) }
+                .onFailure {
+                    Toast.makeText(requireContext(), R.string.rom_save_file_share_failed, Toast.LENGTH_LONG).show()
+                }
+        }
+    }
+
+    private fun requestSaveFileImport(rom: Rom) {
+        pendingSaveImportRom = rom
+        saveFileImportLauncher.launch(arrayOf("*/*"))
+    }
+
+    private fun validateAndConfirmSaveImport(rom: Rom, sourceUri: Uri) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val isPlausibleSaveFile = runCatching {
+                withContext(Dispatchers.IO) {
+                    romSaveFileManager.isPlausibleSaveFile(sourceUri)
+                }
+            }.getOrDefault(false)
+
+            if (!isPlausibleSaveFile) {
+                Toast.makeText(requireContext(), R.string.rom_save_file_import_invalid, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.rom_save_file_import_title)
+                .setMessage(getString(R.string.rom_save_file_import_message, rom.config.customName ?: rom.name))
+                .setPositiveButton(android.R.string.ok) { _, _ -> importSaveFile(rom, sourceUri) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun importSaveFile(rom: Rom, sourceUri: Uri) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    romSaveFileManager.importSaveFile(rom, sourceUri)
+                }
+            }
+            val message = if (result.isSuccess) {
+                R.string.rom_save_file_import_success
+            } else {
+                R.string.rom_save_file_import_failed
+            }
+            Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+        }
     }
 
     fun setRomSelectedListener(listener: (Rom) -> Unit) {

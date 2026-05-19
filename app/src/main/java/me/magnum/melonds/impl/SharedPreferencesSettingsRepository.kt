@@ -54,6 +54,9 @@ import me.magnum.melonds.domain.model.SortingMode
 import me.magnum.melonds.domain.model.SortingOrder
 import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.domain.model.VulkanDriverConfiguration
+import me.magnum.melonds.domain.model.VulkanDriverInfo
+import me.magnum.melonds.domain.model.VulkanDriverMode
 import me.magnum.melonds.domain.model.camera.DSiCameraSourceType
 import me.magnum.melonds.domain.model.input.SoftInputBehaviour
 import me.magnum.melonds.domain.model.layout.LayoutConfiguration
@@ -64,6 +67,8 @@ import me.magnum.melonds.impl.dtos.input.ControllerConfigurationDto
 import me.magnum.melonds.impl.input.ControllerConfigurationFactory
 import me.magnum.melonds.ui.Theme
 import me.magnum.melonds.utils.enumValueOfIgnoreCase
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import kotlin.math.pow
@@ -518,6 +523,13 @@ class SharedPreferencesSettingsRepository(
         return dirPreference?.toUri()
     }
 
+    override fun clearBiosDirectories() {
+        preferences.edit {
+            remove("bios_dir")
+            remove("dsi_bios_dir")
+        }
+    }
+
     override fun isDldiSdCardEnabled(): Boolean {
         return preferences.getBoolean("system_dldi_sd_card_enabled", false)
     }
@@ -566,6 +578,173 @@ class SharedPreferencesSettingsRepository(
         return getOrCreatePreferenceSharedFlow("video_renderer") {
             getCurrentVideoRenderer()
         }
+    }
+
+    override fun getVulkanDriverConfiguration(nativeLibraryDir: String): VulkanDriverConfiguration {
+        val selectedDriver = getSelectedVulkanDriver()?.withResolvedRuntimePath()
+        val requestedMode = getVulkanDriverMode()
+        val useCustomDriver = requestedMode == VulkanDriverMode.CUSTOM &&
+            selectedDriver != null &&
+            AdrenoVulkanDriverSupport.isSupported(context)
+        val tmpDir = File(context.cacheDir, "adrenotools/tmp").apply { mkdirs() }
+
+        return VulkanDriverConfiguration(
+            mode = if (useCustomDriver) VulkanDriverMode.CUSTOM else VulkanDriverMode.SYSTEM,
+            tmpLibDir = tmpDir.absolutePath,
+            hookLibDir = nativeLibraryDir,
+            customDriverDir = selectedDriver
+                ?.takeIf { useCustomDriver }
+                ?.driverDir
+                ?.let { if (it.endsWith(File.separator)) it else it + File.separator },
+            customDriverName = selectedDriver?.takeIf { useCustomDriver }?.driverName,
+            customDriverDisplayName = selectedDriver?.takeIf { useCustomDriver }?.displayName,
+        )
+    }
+
+    override fun getVulkanDriverMode(): VulkanDriverMode {
+        return getEnumPreference("video_vulkan_driver_mode", VulkanDriverMode.SYSTEM)
+    }
+
+    override fun setVulkanDriverMode(mode: VulkanDriverMode) {
+        preferences.edit(commit = true) {
+            putString("video_vulkan_driver_mode", mode.name.lowercase())
+        }
+    }
+
+    override fun getInstalledVulkanDrivers(): List<VulkanDriverInfo> {
+        val storedDrivers = preferences.getString("video_vulkan_custom_drivers", null)
+            ?.let { parseVulkanDrivers(it) }
+            .orEmpty()
+        if (storedDrivers.isNotEmpty()) {
+            return storedDrivers
+        }
+
+        val legacyDriverName = preferences.getString("video_vulkan_custom_driver_name", null)
+        val legacyDriverDir = preferences.getString("video_vulkan_custom_driver_dir", null)
+        val legacyDisplayName = preferences.getString("video_vulkan_custom_driver_display_name", null)
+        if (!legacyDriverName.isNullOrBlank() && !legacyDriverDir.isNullOrBlank() && File(legacyDriverDir).isDirectory) {
+            return listOf(
+                VulkanDriverInfo(
+                    id = "legacy",
+                    displayName = legacyDisplayName ?: legacyDriverName,
+                    driverDir = legacyDriverDir,
+                    driverName = legacyDriverName,
+                )
+            )
+        }
+
+        return emptyList()
+    }
+
+    override fun getSelectedVulkanDriverId(): String? {
+        return preferences.getString("video_vulkan_selected_driver_id", null)
+            ?: getInstalledVulkanDrivers().firstOrNull()?.id
+    }
+
+    override fun setSelectedVulkanDriver(id: String) {
+        preferences.edit(commit = true) {
+            putString("video_vulkan_selected_driver_id", id)
+            putString("video_vulkan_driver_mode", VulkanDriverMode.CUSTOM.name.lowercase())
+        }
+    }
+
+    override fun getCustomVulkanDriverDisplayName(): String? {
+        return getSelectedVulkanDriver()?.displayName
+    }
+
+    override fun setCustomVulkanDriver(id: String, driverDir: String, driverName: String, displayName: String) {
+        val drivers = getInstalledVulkanDrivers()
+            .filterNot { it.id == id }
+            .plus(
+                VulkanDriverInfo(
+                    id = id,
+                    displayName = displayName,
+                    driverDir = driverDir,
+                    driverName = driverName,
+                )
+            )
+        preferences.edit(commit = true) {
+            putString("video_vulkan_custom_drivers", serializeVulkanDrivers(drivers))
+            putString("video_vulkan_selected_driver_id", id)
+            putString("video_vulkan_driver_mode", VulkanDriverMode.CUSTOM.name.lowercase())
+            remove("video_vulkan_custom_driver_dir")
+            remove("video_vulkan_custom_driver_name")
+            remove("video_vulkan_custom_driver_display_name")
+        }
+    }
+
+    override fun removeCustomVulkanDriver(id: String) {
+        val remainingDrivers = getInstalledVulkanDrivers().filterNot { it.id == id }
+        preferences.edit(commit = true) {
+            putString("video_vulkan_custom_drivers", serializeVulkanDrivers(remainingDrivers))
+            remove("video_vulkan_custom_driver_dir")
+            remove("video_vulkan_custom_driver_name")
+            remove("video_vulkan_custom_driver_display_name")
+            if (preferences.getString("video_vulkan_selected_driver_id", null) == id) {
+                remove("video_vulkan_selected_driver_id")
+                putString("video_vulkan_driver_mode", VulkanDriverMode.SYSTEM.name.lowercase())
+            }
+        }
+    }
+
+    override fun clearCustomVulkanDrivers() {
+        preferences.edit(commit = true) {
+            remove("video_vulkan_custom_driver_name")
+            remove("video_vulkan_custom_driver_dir")
+            remove("video_vulkan_custom_driver_display_name")
+            remove("video_vulkan_custom_drivers")
+            remove("video_vulkan_selected_driver_id")
+            putString("video_vulkan_driver_mode", VulkanDriverMode.SYSTEM.name.lowercase())
+        }
+    }
+
+    private fun getSelectedVulkanDriver(): VulkanDriverInfo? {
+        val selectedId = getSelectedVulkanDriverId() ?: return null
+        return getInstalledVulkanDrivers().firstOrNull { it.id == selectedId }
+    }
+
+    private fun VulkanDriverInfo.withResolvedRuntimePath(): VulkanDriverInfo {
+        if (File(driverDir, driverName).isFile) {
+            return this
+        }
+
+        val repairedDriverFile = File(context.filesDir, "adreno-drivers")
+            .walkTopDown()
+            .firstOrNull { it.isFile && it.name == driverName }
+            ?: return this
+
+        return copy(driverDir = repairedDriverFile.parentFile?.absolutePath ?: driverDir)
+    }
+
+    private fun parseVulkanDrivers(text: String): List<VulkanDriverInfo> {
+        return runCatching {
+            val array = JSONArray(text)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val id = item.optString("id").takeIf { it.isNotBlank() } ?: continue
+                    val displayName = item.optString("displayName").takeIf { it.isNotBlank() } ?: continue
+                    val driverDir = item.optString("driverDir").takeIf { it.isNotBlank() } ?: continue
+                    val driverName = item.optString("driverName").takeIf { it.isNotBlank() } ?: continue
+                    add(VulkanDriverInfo(id, displayName, driverDir, driverName))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun serializeVulkanDrivers(drivers: List<VulkanDriverInfo>): String {
+        val array = JSONArray()
+        drivers.forEach { driver ->
+            array.put(
+                JSONObject().apply {
+                    put("id", driver.id)
+                    put("displayName", driver.displayName)
+                    put("driverDir", driver.driverDir)
+                    put("driverName", driver.driverName)
+                }
+            )
+        }
+        return array.toString()
     }
 
     override fun getVideoInternalResolutionScaling(): Flow<Int> {
@@ -745,6 +924,7 @@ class SharedPreferencesSettingsRepository(
         } else {
             RetroArchShaderSourceResolution.VULKAN_IR
         }
+        logRetroArchShaderImportDiagnostics(importRoot, relativePath, presetAssignments, passCount, sourceResolution)
 
         return RetroArchShaderConfiguration(
             presetPath = presetFile.absolutePath,
@@ -753,6 +933,36 @@ class SharedPreferencesSettingsRepository(
             parameterOverrides = parameterOverrides,
             clearHistory = clearHistory,
         )
+    }
+
+    private fun logRetroArchShaderImportDiagnostics(
+        importRoot: File,
+        presetRelativePath: String,
+        assignments: Map<String, String>,
+        passCount: Int,
+        sourceResolution: RetroArchShaderSourceResolution,
+    ) {
+        val references = RetroArchPresetReferences(
+            shaders = RetroArchShaderPreset.shaderReferences(assignments),
+            textures = RetroArchShaderPreset.textureReferences(assignments),
+        )
+        Log.i(
+            TAG,
+            "RetroArchShaderImport: preset=$presetRelativePath " +
+                "passes=$passCount source=${sourceResolution.name.lowercase()} " +
+                "shaders=${references.shaders.size} textures=${references.textures.size}",
+        )
+        references.textures.forEachIndexed { index, rawReference ->
+            val resolvedPath = RetroArchShaderPreset.resolveRelativePath(presetRelativePath, rawReference)
+            val textureFile = resolvedPath?.let { File(importRoot, it) }
+            Log.i(
+                TAG,
+                "RetroArchShaderImport: texture[$index] ref=$rawReference " +
+                    "resolved=${resolvedPath ?: "<unsupported>"} " +
+                    "exists=${textureFile?.isFile == true} " +
+                    "bytes=${textureFile?.takeIf { it.isFile }?.length() ?: 0}",
+            )
+        }
     }
 
     private fun normalizeRetroArchPresetPath(rawPath: String?): String? {

@@ -8,6 +8,7 @@
 
 #include "Platform.h"
 #include "VulkanContext.h"
+#include "VulkanDispatch.h"
 #include "VulkanOutput.h"
 #include "VulkanSurfacePresenterFragmentShaderData.h"
 #include "VulkanSurfacePresenterVertexShaderData.h"
@@ -28,6 +29,7 @@ constexpr u32 kDrawModeTopScreen = 2u;
 constexpr u32 kDrawModeBottomScreen = 3u;
 constexpr u32 kDrawModeFilteredCompositeTop = 4u;
 constexpr u32 kDrawModeFilteredCompositeBottom = 5u;
+constexpr u32 kDrawModeRetroArchCompositeFrame = 6u;
 constexpr u32 kNativeScreenWidth = 256u;
 constexpr u32 kNativeScreenHeight = 192u;
 constexpr u32 kNativeAtlasHeight = 386u;
@@ -1060,6 +1062,8 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (waitResult != VK_SUCCESS)
             continue;
 
+        bool retroArchApplied = false;
+        VulkanFilterMode effectiveFiltering = surfaceState.config.filtering;
         if (surfaceState.config.filtering == VulkanFilterMode::RetroArch && !directPresent)
         {
             VkImage retroImage = VK_NULL_HANDLE;
@@ -1068,16 +1072,18 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             {
                 sampledImage = retroImage;
                 sampledImageView = retroImageView;
+                retroArchApplied = true;
             }
             else
             {
                 sampledImage = frameImage;
                 sampledImageView = frameImageView;
+                effectiveFiltering = VulkanFilterMode::Nearest;
             }
         }
 
         const u64 descriptorStartNs = PerfNowNs();
-        if (!updateDescriptorSets(surfaceState, sampledImageView, inputs, surfaceState.config.filtering, directPresent))
+        if (!updateDescriptorSets(surfaceState, sampledImageView, inputs, effectiveFiltering, directPresent))
             continue;
         descriptorCpuNs += PerfNowNs() - descriptorStartNs;
 
@@ -1088,6 +1094,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
                 surfaceState.config,
                 surfaceState.background.imageView != VK_NULL_HANDLE ? &surfaceState.background : nullptr,
                 directPresent,
+                retroArchApplied,
                 drawCalls))
             continue;
         vertexCpuNs += PerfNowNs() - vertexStartNs;
@@ -2009,6 +2016,7 @@ bool VulkanSurfacePresenter::createRetroArchImage(RetroArchImageResource& resour
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     imageInfo.extent = {width, height, 1};
@@ -3041,9 +3049,12 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     const VulkanSurfaceConfig& config,
     const BackgroundResource* backgroundResource,
     bool directPresent,
+    bool retroArchApplied,
     std::vector<DrawCall>& drawCalls)
 {
-    if (!surfaceState.vertexBufferDirty && surfaceState.cachedDirectPresent == directPresent)
+    if (!surfaceState.vertexBufferDirty
+        && surfaceState.cachedDirectPresent == directPresent
+        && surfaceState.cachedRetroArchApplied == retroArchApplied)
     {
         drawCalls = surfaceState.cachedDrawCalls;
         return true;
@@ -3172,9 +3183,11 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         const float uvBottom = directPresent ? 1.0f : (topScreen ? (0.5f - (1.0f / 386.0f)) : 1.0f);
         const u32 drawMode = directPresent
             ? (topScreen ? kDrawModeTopScreen : kDrawModeBottomScreen)
-            : (config.filtering != VulkanFilterMode::RetroArch && IsVulkanPostProcessFilter(config.filtering)
+            : (retroArchApplied
+                ? kDrawModeRetroArchCompositeFrame
+                : (config.filtering != VulkanFilterMode::RetroArch && IsVulkanPostProcessFilter(config.filtering)
                 ? (topScreen ? kDrawModeFilteredCompositeTop : kDrawModeFilteredCompositeBottom)
-                : kDrawModeCompositeFrame);
+                : kDrawModeCompositeFrame));
         const float topVertexUv = directPresent ? uvBottom : uvTop;
         const float bottomVertexUv = directPresent ? uvTop : uvBottom;
 
@@ -3303,6 +3316,7 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
 
     surfaceState.cachedDrawCalls = drawCalls;
     surfaceState.cachedDirectPresent = directPresent;
+    surfaceState.cachedRetroArchApplied = retroArchApplied;
     surfaceState.vertexBufferDirty = false;
 
     return true;

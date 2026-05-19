@@ -108,6 +108,34 @@
             app:mimeType="image/jpeg|image/png" />
 
     <PreferenceCategory
+            android:key="video_vulkan_driver_category"
+            android:title="@string/video_vulkan_driver_category"
+            app:iconSpaceReserved="false">
+
+        <ListPreference
+                android:key="video_vulkan_driver_mode"
+                android:title="@string/video_vulkan_driver_mode"
+                android:summary="%s"
+                app:iconSpaceReserved="false"
+                android:entries="@array/video_vulkan_driver_mode_options"
+                android:entryValues="@array/video_vulkan_driver_mode_values"
+                android:defaultValue="system" />
+
+        <Preference
+                android:key="video_vulkan_driver_import"
+                android:title="@string/video_vulkan_driver_import"
+                android:summary="@string/video_vulkan_driver_import_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="video_vulkan_driver_remove"
+                android:title="@string/video_vulkan_driver_remove"
+                android:summary="@string/video_vulkan_driver_remove_summary"
+                app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
             android:key="video_hacks_category"
             android:title="@string/video_hacks"
             app:iconSpaceReserved="false">

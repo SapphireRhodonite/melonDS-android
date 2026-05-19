@@ -1,6 +1,7 @@
 #include <vector>
 #include <cstring>
 #include <atomic>
+#include <string>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
 #include "JniEnvHandler.h"
@@ -12,6 +13,7 @@
 #include "renderer/FrameQueue.h"
 #include "renderer/VulkanOutput.h"
 #include "VulkanContext.h"
+#include "VulkanDispatch.h"
 #include "retroachievements/RetroAchievementsManager.h"
 
 JniEnvHandler* jniEnvHandler;
@@ -40,6 +42,39 @@ constexpr const char* kOptionalExternalMemoryExtension = VK_KHR_EXTERNAL_MEMORY_
 constexpr const char* kOptionalAndroidHardwareBufferExtension = VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME;
 std::atomic<bool> gForceDisableTimelineSemaphores{false};
 std::atomic<bool> gForceDisableDynamicTextureIndexing{false};
+
+std::string jStringToString(JNIEnv* env, jstring value)
+{
+    if (value == nullptr)
+        return {};
+
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    if (chars == nullptr)
+        return {};
+
+    std::string result(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return result;
+}
+
+void configureVulkanDriver(
+    JNIEnv* env,
+    jboolean useCustomVulkanDriver,
+    jstring vulkanTmpLibDir,
+    jstring vulkanHookLibDir,
+    jstring customVulkanDriverDir,
+    jstring customVulkanDriverName,
+    jstring customVulkanDriverDisplayName)
+{
+    melonDS::VulkanDispatch::DriverConfiguration vulkanDriverConfiguration{};
+    vulkanDriverConfiguration.UseCustomDriver = useCustomVulkanDriver == JNI_TRUE;
+    vulkanDriverConfiguration.TmpLibDir = jStringToString(env, vulkanTmpLibDir);
+    vulkanDriverConfiguration.HookLibDir = jStringToString(env, vulkanHookLibDir);
+    vulkanDriverConfiguration.CustomDriverDir = jStringToString(env, customVulkanDriverDir);
+    vulkanDriverConfiguration.CustomDriverName = jStringToString(env, customVulkanDriverName);
+    vulkanDriverConfiguration.DisplayName = jStringToString(env, customVulkanDriverDisplayName);
+    melonDS::VulkanDispatch::ConfigureDriver(vulkanDriverConfiguration);
+}
 
 bool hasExtension(const char* extensionName, const std::vector<VkExtensionProperties>& extensions)
 {
@@ -258,6 +293,15 @@ bool hasRequiredDeviceExtensions(VkInstance instance, VkPhysicalDevice physicalD
 
 bool createVulkanInstance(VkInstance* instance)
 {
+    if (!melonDS::VulkanDispatch::Initialize())
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "MelonDSAndroidInterface: Vulkan support check failed (driver dispatch unavailable)"
+        );
+        return false;
+    }
+
     if (!hasRequiredInstanceExtensions())
     {
         melonDS::Platform::Log(
@@ -292,6 +336,7 @@ bool createVulkanInstance(VkInstance* instance)
         return false;
     }
 
+    melonDS::VulkanDispatch::LoadInstance(*instance);
     return true;
 }
 
@@ -422,7 +467,16 @@ void setVulkanCompatibilityOverrides(bool disableTimelineSemaphores, bool disabl
 extern "C"
 {
 JNIEXPORT void JNICALL
-Java_me_magnum_melonds_MelonDSAndroidInterface_setup(JNIEnv* env, jobject thiz, jobject uriFileHandler)
+Java_me_magnum_melonds_MelonDSAndroidInterface_setupNative(
+    JNIEnv* env,
+    jobject thiz,
+    jobject uriFileHandler,
+    jboolean useCustomVulkanDriver,
+    jstring vulkanTmpLibDir,
+    jstring vulkanHookLibDir,
+    jstring customVulkanDriverDir,
+    jstring customVulkanDriverName,
+    jstring customVulkanDriverDisplayName)
 {
     env->GetJavaVM(&vm);
     MelonDSAndroid::RetroAchievements::RetroAchievementsManager::SetJavaVm(vm);
@@ -431,6 +485,38 @@ Java_me_magnum_melonds_MelonDSAndroidInterface_setup(JNIEnv* env, jobject thiz, 
     fileHandler = new UriFileHandler(jniEnvHandler, androidUriFileHandler);
 
     MelonDSAndroid::fileHandler = fileHandler;
+
+    configureVulkanDriver(
+        env,
+        useCustomVulkanDriver,
+        vulkanTmpLibDir,
+        vulkanHookLibDir,
+        customVulkanDriverDir,
+        customVulkanDriverName,
+        customVulkanDriverDisplayName
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonDSAndroidInterface_configureVulkanDriverNative(
+    JNIEnv* env,
+    jobject thiz,
+    jboolean useCustomVulkanDriver,
+    jstring vulkanTmpLibDir,
+    jstring vulkanHookLibDir,
+    jstring customVulkanDriverDir,
+    jstring customVulkanDriverName,
+    jstring customVulkanDriverDisplayName)
+{
+    configureVulkanDriver(
+        env,
+        useCustomVulkanDriver,
+        vulkanTmpLibDir,
+        vulkanHookLibDir,
+        customVulkanDriverDir,
+        customVulkanDriverName,
+        customVulkanDriverDisplayName
+    );
 }
 
 JNIEXPORT jlong JNICALL

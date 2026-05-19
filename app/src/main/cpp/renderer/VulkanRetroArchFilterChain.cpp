@@ -5,6 +5,7 @@
 
 #include "Platform.h"
 #include "VulkanContext.h"
+#include "VulkanDispatch.h"
 
 namespace MelonDSAndroid
 {
@@ -177,7 +178,7 @@ bool VulkanRetroArchFilterChain::createChain(
     currentParameterOverrides = parameterOverrides;
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Info,
-        "VulkanPresenter[RetroArch]: preset=%s source=%ux%u output=%ux%u params=%zu",
+        "VulkanPresenter[RetroArch]: preset=%s source=%ux%u output=%ux%u sourceFormat=B8G8R8A8_UNORM outputFormat=R8G8B8A8_UNORM params=%zu",
         presetPath.c_str(),
         sourceWidth,
         sourceHeight,
@@ -209,7 +210,7 @@ bool VulkanRetroArchFilterChain::recordFrame(
 
     libra_image_vk_t source{};
     source.handle = sourceImage;
-    source.format = VK_FORMAT_R8G8B8A8_UNORM;
+    source.format = VK_FORMAT_B8G8R8A8_UNORM;
     source.width = currentSourceWidth;
     source.height = currentSourceHeight;
 

@@ -13,6 +13,7 @@ import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.rom.Rom
+import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.domain.services.EmulatorLaunchPreconditionChecker
 import me.magnum.melonds.ui.common.rom.model.LaunchValidationResult
 import me.magnum.melonds.utils.EventSharedFlow
@@ -21,6 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class EmulatorLaunchValidationViewModel @Inject constructor(
     private val emulatorLaunchPreconditionChecker: EmulatorLaunchPreconditionChecker,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
     private companion object {
         private const val TAG = "LaunchValidationVM"
@@ -81,6 +83,11 @@ class EmulatorLaunchValidationViewModel @Inject constructor(
     }
 
     fun onReturnFromDsiWareManagerSetup() {
+        retryLaunchValidation()
+    }
+
+    fun clearBiosDirectoriesAndRetry() {
+        settingsRepository.clearBiosDirectories()
         retryLaunchValidation()
     }
 

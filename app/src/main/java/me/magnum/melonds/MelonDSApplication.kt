@@ -52,7 +52,10 @@ class MelonDSApplication : Application(), Configuration.Provider {
         settingsBackupManager.initializeMirror()
         appLogFileRecorder.start()
         recoverUnexpectedHardcoreOfflineLossIfNeeded()
-        MelonDSAndroidInterface.setup(UriFileHandler(this, uriHandler))
+        MelonDSAndroidInterface.setup(
+            UriFileHandler(this, uriHandler),
+            settingsRepository.getVulkanDriverConfiguration(applicationInfo.nativeLibraryDir),
+        )
     }
 
     private fun createNotificationChannels() {

@@ -52,6 +52,7 @@ android {
     buildFeatures {
         viewBinding = true
         compose = true
+        resValues = true
     }
     buildTypes {
         getByName("release") {
@@ -79,10 +80,22 @@ android {
     productFlavors {
         create("playStore") {
             dimension = "version"
+            resValue("bool", "adrenotools_enabled", "false")
+            externalNativeBuild {
+                cmake {
+                    arguments("-DMELONDS_ENABLE_ADRENOTOOLS=0")
+                }
+            }
         }
         create("gitHub") {
             dimension = "version"
             isDefault = true
+            resValue("bool", "adrenotools_enabled", "true")
+            externalNativeBuild {
+                cmake {
+                    arguments("-DMELONDS_ENABLE_ADRENOTOOLS=1")
+                }
+            }
         }
 
         create("prod") {
@@ -104,6 +117,11 @@ android {
         // Adds exported schema location as test app assets.
         getByName("androidTest").assets.directories += "$projectDir/schemas"
         getByName("main").jniLibs.srcDir("$buildDir/generated/librashader/jniLibs")
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21

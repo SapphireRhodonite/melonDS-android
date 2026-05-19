@@ -7,8 +7,20 @@ object RetroArchShaderPreset {
         """sourcesize\.(?:xy|x|y)\s*[^;\n]*outputsize\.zw|outputsize\.zw\s*[^;\n]*sourcesize\.(?:xy|x|y)""",
         RegexOption.IGNORE_CASE,
     )
+    private val OriginalOutputRatioRegex = Regex(
+        """originalsize\.(?:xy|x|y)\s*[^;\n]*outputsize\.zw|outputsize\.zw\s*[^;\n]*originalsize\.(?:xy|x|y)""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val OutputInputRatioRegex = Regex(
+        """outputsize\.xy\s*[^;\n]*(?:sourcesize|originalsize)\.zw|(?:sourcesize|originalsize)\.zw\s*[^;\n]*outputsize\.xy""",
+        RegexOption.IGNORE_CASE,
+    )
     private val SourceGridRegex = Regex(
         """(?:fract|floor)\s*\([^;\n]*sourcesize\.xy|sourcesize\.xy\s*[^;\n]*(?:fract|floor)""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val OriginalGridRegex = Regex(
+        """(?:fract|floor|sin|modf)\s*\([^;\n]*originalsize\.xy|originalsize\.xy\s*[^;\n]*(?:fract|floor|sin|modf)""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -159,32 +171,49 @@ object RetroArchShaderPreset {
             return false
         }
 
-        val firstPassScaleType = assignments["scale_type0"]?.lowercase()
-        val firstPassScaleTypeX = assignments["scale_type_x0"]?.lowercase()
-        val firstPassScaleTypeY = assignments["scale_type_y0"]?.lowercase()
-        val firstPassTargetsViewport =
-            firstPassScaleType == "viewport" ||
-                firstPassScaleTypeX == "viewport" ||
-                firstPassScaleTypeY == "viewport"
-        if (!firstPassTargetsViewport) {
-            return false
-        }
-
         val code = shaderTexts.joinToString(separator = "\n").lowercase()
-        if (!code.contains("sourcesize")) {
+        if (!code.contains("sourcesize") && !code.contains("originalsize") && !code.contains("outputsize")) {
             return false
         }
 
+        val anyPassTargetsViewport = passTargetsViewport(assignments)
         val pixelGridToken = code.contains("texelfetch") ||
             code.contains("texelfetchoffset") ||
             code.contains("subpix") ||
             code.contains("retro_pixel") ||
             code.contains("pixel_size") ||
             code.contains("pixel size") ||
-            code.contains("lcd gamma")
+            code.contains("lcd gamma") ||
+            code.contains("lcd grid") ||
+            code.contains("scanline") ||
+            code.contains("scanlines") ||
+            code.contains("pixel_borders") ||
+            code.contains("tx_to_px") ||
+            code.contains("subpx_coverage")
 
-        return pixelGridToken ||
-            SourceOutputRatioRegex.containsMatchIn(code) ||
-            SourceGridRegex.containsMatchIn(code)
+        val sizeRatioToken = SourceOutputRatioRegex.containsMatchIn(code) ||
+            OriginalOutputRatioRegex.containsMatchIn(code) ||
+            OutputInputRatioRegex.containsMatchIn(code)
+        val gridCoordinateToken = SourceGridRegex.containsMatchIn(code) ||
+            OriginalGridRegex.containsMatchIn(code)
+
+        return if (anyPassTargetsViewport) {
+            pixelGridToken || sizeRatioToken || gridCoordinateToken
+        } else {
+            pixelGridToken && sizeRatioToken
+        }
+    }
+
+    private fun passTargetsViewport(assignments: Map<String, String>): Boolean {
+        val count = passCount(assignments)
+        for (index in 0 until count) {
+            val scaleType = assignments["scale_type$index"]?.lowercase()
+            val scaleTypeX = assignments["scale_type_x$index"]?.lowercase()
+            val scaleTypeY = assignments["scale_type_y$index"]?.lowercase()
+            if (scaleType == "viewport" || scaleTypeX == "viewport" || scaleTypeY == "viewport") {
+                return true
+            }
+        }
+        return false
     }
 }

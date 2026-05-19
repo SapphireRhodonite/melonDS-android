@@ -1,5 +1,6 @@
 package me.magnum.melonds.domain.services
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.magnum.melonds.MelonDSAndroidInterface
@@ -16,6 +17,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class EmulatorLaunchPreconditionChecker(
+    private val context: Context,
     private val configurationDirectoryVerifier: ConfigurationDirectoryVerifier,
     private val romFileProcessorFactory: RomFileProcessorFactory,
     private val dsiNandManager: DSiNandManager,
@@ -88,12 +90,15 @@ class EmulatorLaunchPreconditionChecker(
     }
 
     private fun getRomConfigurationDirectoryResult(rom: Rom): ConfigurationDirResult {
-        val willUseInternalFirmware = !settingsRepository.useCustomBios() && rom.config.runtimeConsoleType == RuntimeConsoleType.DEFAULT
-        if (willUseInternalFirmware) {
+        if (!settingsRepository.useCustomBios() && rom.config.runtimeConsoleType == RuntimeConsoleType.DEFAULT) {
             return ConfigurationDirResult(ConsoleType.DS, ConfigurationDirResult.Status.VALID, emptyArray(), emptyArray())
         }
 
         val romTargetConsoleType = rom.config.runtimeConsoleType.targetConsoleType ?: settingsRepository.getDefaultConsoleType()
+        if (!settingsRepository.useCustomBios() && romTargetConsoleType == ConsoleType.DS) {
+            return ConfigurationDirResult(ConsoleType.DS, ConfigurationDirResult.Status.VALID, emptyArray(), emptyArray())
+        }
+
         return configurationDirectoryVerifier.checkConsoleConfigurationDirectory(romTargetConsoleType)
     }
 
@@ -103,6 +108,9 @@ class EmulatorLaunchPreconditionChecker(
         }
 
         return withContext(Dispatchers.Default) {
+            MelonDSAndroidInterface.configureVulkanDriver(
+                settingsRepository.getVulkanDriverConfiguration(context.applicationInfo.nativeLibraryDir)
+            )
             when {
                 !MelonDSAndroidInterface.isVulkanRendererSupported() -> RendererValidationFailure.UNSUPPORTED
                 !MelonDSAndroidInterface.canInitializeVulkanRenderer() -> RendererValidationFailure.INIT_FAILED

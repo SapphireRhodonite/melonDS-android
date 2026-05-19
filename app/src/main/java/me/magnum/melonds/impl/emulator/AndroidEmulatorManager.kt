@@ -342,6 +342,11 @@ class AndroidEmulatorManager(
     }
 
     private fun setupEmulator(emulatorConfiguration: EmulatorConfiguration) {
+        if (emulatorConfiguration.rendererConfiguration.renderer == VideoRenderer.VULKAN) {
+            MelonDSAndroidInterface.configureVulkanDriver(
+                settingsRepository.getVulkanDriverConfiguration(context.applicationInfo.nativeLibraryDir)
+            )
+        }
         MelonEmulator.setupEmulator(
             emulatorConfiguration = emulatorConfiguration,
             dsiCameraSource = cameraManager,
@@ -352,13 +357,18 @@ class AndroidEmulatorManager(
     private suspend fun getRomEmulatorConfiguration(rom: Rom): EmulatorConfiguration {
         val baseConfiguration = settingsRepository.getEmulatorConfiguration(rom.config)
         val mustUseCustomBios = baseConfiguration.useCustomBios || rom.config.runtimeConsoleType != RuntimeConsoleType.DEFAULT
+        val consoleType = if (!baseConfiguration.useCustomBios && rom.config.runtimeConsoleType == RuntimeConsoleType.DEFAULT) {
+            ConsoleType.DS
+        } else {
+            getRomOptionOrDefault(rom.config.runtimeConsoleType, baseConfiguration.consoleType)
+        }
 
         return baseConfiguration.copy(
             useCustomBios = mustUseCustomBios,
             showBootScreen = baseConfiguration.showBootScreen && mustUseCustomBios,
             frameLimitSpeedMultiplier = if (emulatorSession.isRetroAchievementsHardcoreModeEnabled) 1.0f else baseConfiguration.frameLimitSpeedMultiplier,
             hgEngineFixEnabled = rom.config.useHgEngineFix,
-            consoleType = getRomOptionOrDefault(rom.config.runtimeConsoleType, baseConfiguration.consoleType),
+            consoleType = consoleType,
             micSource = getRomOptionOrDefault(rom.config.runtimeMicSource, baseConfiguration.micSource)
         ).run { getPermissionAdjustedConfiguration(this) }
     }

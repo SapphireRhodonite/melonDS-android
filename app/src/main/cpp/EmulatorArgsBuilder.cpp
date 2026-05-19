@@ -16,11 +16,22 @@ using namespace melonDS::Platform;
 namespace MelonDSAndroid
 {
 
+bool hasConfiguredPath(const char* path) noexcept
+{
+    return path != nullptr && path[0] != '\0';
+}
+
 std::unique_ptr<ARM9BIOSImage> loadARM9BIOS(const EmulatorConfiguration& configuration) noexcept
 {
     if (configuration.userInternalFirmwareAndBios)
     {
         return std::make_unique<ARM9BIOSImage>(bios_arm9_bin);
+    }
+
+    if (!hasConfiguredPath(configuration.dsBios9Path))
+    {
+        Log(Warn, "ARM9 BIOS path is not configured\n");
+        return nullptr;
     }
 
     std::string path = configuration.dsBios9Path;
@@ -44,6 +55,12 @@ std::unique_ptr<ARM7BIOSImage> loadARM7BIOS(const EmulatorConfiguration& configu
     if (configuration.userInternalFirmwareAndBios)
     {
         return std::make_unique<ARM7BIOSImage>(bios_arm7_bin);
+    }
+
+    if (!hasConfiguredPath(configuration.dsBios7Path))
+    {
+        Log(Warn, "ARM7 BIOS path is not configured\n");
+        return nullptr;
     }
 
     std::string path = configuration.dsBios7Path;
@@ -234,6 +251,12 @@ Firmware generateFirmware(const EmulatorConfiguration& configuration, int type, 
 
 std::unique_ptr<DSiBIOSImage> loadDSiARM9BIOS(const EmulatorConfiguration& configuration) noexcept
 {
+    if (!hasConfiguredPath(configuration.dsiBios9Path))
+    {
+        Log(Warn, "ARM9i BIOS path is not configured\n");
+        return nullptr;
+    }
+
     std::string path = configuration.dsiBios9Path;
 
     if (FileHandle* f = OpenFile(path, Read))
@@ -261,6 +284,12 @@ std::unique_ptr<DSiBIOSImage> loadDSiARM9BIOS(const EmulatorConfiguration& confi
 
 std::unique_ptr<DSiBIOSImage> loadDSiARM7BIOS(const EmulatorConfiguration& configuration) noexcept
 {
+    if (!hasConfiguredPath(configuration.dsiBios7Path))
+    {
+        Log(Warn, "ARM7i BIOS path is not configured\n");
+        return nullptr;
+    }
+
     std::string path = configuration.dsiBios7Path;
 
     if (FileHandle* f = OpenFile(path, Read))
@@ -300,11 +329,14 @@ std::optional<Firmware> loadFirmware(const EmulatorConfiguration& configuration,
         }
     }
 
-    std::string firmwarePath;
-    if (type == 1)
-        firmwarePath = configuration.dsiFirmwarePath;
-    else
-        firmwarePath = configuration.dsFirmwarePath;
+    const char* configuredFirmwarePath = type == 1 ? configuration.dsiFirmwarePath : configuration.dsFirmwarePath;
+    if (!hasConfiguredPath(configuredFirmwarePath))
+    {
+        Log(Error, "%s firmware path is not configured\n", type == 1 ? "DSi" : "DS");
+        return std::nullopt;
+    }
+
+    std::string firmwarePath = configuredFirmwarePath;
 
     std::string fwpath_inst = firmwarePath; // TODO: Add support for one firmware file per instance
 
@@ -338,6 +370,12 @@ std::optional<Firmware> loadFirmware(const EmulatorConfiguration& configuration,
 
 std::optional<DSi_NAND::NANDImage> loadNAND(const EmulatorConfiguration& configuration, const std::array<u8, DSiBIOSSize>& arm7ibios) noexcept
 {
+    if (!hasConfiguredPath(configuration.dsiNandPath))
+    {
+        Log(Error, "DSi NAND path is not configured\n");
+        return std::nullopt;
+    }
+
     std::string path = configuration.dsiNandPath;
 
     FileHandle* nandfile = OpenFile(path, ReadWriteExisting);

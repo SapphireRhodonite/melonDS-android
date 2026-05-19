@@ -257,6 +257,7 @@ private:
         DescriptorSetCacheState screenDescriptorCache{};
         DescriptorSetCacheState backgroundDescriptorCache{};
         bool cachedDirectPresent = false;
+        bool cachedRetroArchApplied = false;
         std::vector<DrawCall> cachedDrawCalls;
         VkQueryPool timestampQueryPool = VK_NULL_HANDLE;
         bool timestampPending = false;
@@ -301,6 +302,7 @@ private:
         const VulkanSurfaceConfig& config,
         const BackgroundResource* backgroundResource,
         bool directPresent,
+        bool retroArchApplied,
         std::vector<DrawCall>& drawCalls
     );
     bool recordSurfaceCommands(
