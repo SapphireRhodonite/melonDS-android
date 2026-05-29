@@ -366,8 +366,13 @@ private:
         u32 width{};
         u32 height{};
         bool screenSwap{};
+        bool screenSwapToggledFromPrevious{};
         bool hasContent{};
         bool hasPreparedInputs{};
+        bool replayTopComposedFromPrevious{};
+        bool replayBottomComposedFromPrevious{};
+        Frame* previousTopComposedFrame{};
+        Frame* previousBottomComposedFrame{};
         bool hasRenderer3dSnapshot{};
         bool renderer3dSnapshotScreenSwap{};
         bool hasPreparedCapture3dSource{};
@@ -499,6 +504,8 @@ private:
     Frame* lastPreparedFrame{nullptr};
     Frame* lastTopRendererSourceFrame{nullptr};
     Frame* lastBottomRendererSourceFrame{nullptr};
+    Frame* lastTopComposedFrame{nullptr};
+    Frame* lastBottomComposedFrame{nullptr};
     u32 framesSinceTopLive3D{1024};
     u32 framesSinceBottomLive3D{1024};
     bool class4AsymmetricCadenceActive{};
@@ -517,6 +524,7 @@ private:
     u32 packedDebugLogsRemaining{};
     u32 class4PairDebugLogsRemaining{};
     u32 regularComp7PackedOwnerDebugLogsRemaining{};
+    u32 structuredComp7HandoffDebugLogsRemaining{};
     bool regularComp7PackedOwnerDebugActive{};
     std::mutex temporalStatsLock;
     VulkanOutputTemporalStats temporalStats{};

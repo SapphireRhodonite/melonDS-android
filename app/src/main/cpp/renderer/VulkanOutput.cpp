@@ -76,6 +76,54 @@ bool screenUsesFullRegularComp7WithDominantAbove(const SoftPackedScreenStats& st
         && stats.StructuredAboveVisiblePixels > dominantPixelThreshold;
 }
 
+bool screenUsesPlainStructuredComp7HandoffSlot(const SoftPackedScreenStats& stats)
+{
+    constexpr u32 nearlyFullPixelThreshold = (kScreenWidth * kScreenHeight * 7u) / 8u;
+    constexpr u32 dominantLineThreshold = kScreenHeight / 2u;
+    return stats.DisplayModeCounts[1] > dominantLineThreshold
+        && stats.CompModeCounts[7] > nearlyFullPixelThreshold
+        && stats.StructuredSlotPixels > nearlyFullPixelThreshold
+        && stats.StructuredAbovePixels == 0u
+        && stats.StructuredAboveVisiblePixels == 0u
+        && stats.Structured2DOnlyPixels == 0u
+        && stats.Plane0VisiblePixels == 0u
+        && stats.Plane1VisiblePixels == 0u
+        && stats.RegularCaptureUses3dLines == 0u
+        && stats.VramCaptureUses3dLines == 0u
+        && stats.ForceLive3dCompMode7Lines == 0u;
+}
+
+bool screenHasStructuredHandoffOverlay(const SoftPackedScreenStats& stats)
+{
+    constexpr u32 dominantPixelThreshold = (kScreenWidth * kScreenHeight * 4u) / 5u;
+    constexpr u32 sparseHandoffSlotThreshold = (kScreenWidth * kScreenHeight) / 5u;
+    constexpr u32 overlayVisibleThreshold = kScreenWidth * 4u;
+    constexpr u32 dominantLineThreshold = kScreenHeight / 2u;
+    return stats.DisplayModeCounts[1] > dominantLineThreshold
+        && stats.StructuredSlotPixels > dominantPixelThreshold
+        && stats.CompModeCounts[4] > dominantPixelThreshold
+        && stats.CompModeCounts[7] > 0u
+        && stats.CompModeCounts[7] < sparseHandoffSlotThreshold
+        && stats.StructuredAboveVisiblePixels > overlayVisibleThreshold
+        && stats.RegularCaptureUses3dLines == 0u
+        && stats.VramCaptureUses3dLines == 0u
+        && stats.ForceLive3dCompMode7Lines == 0u;
+}
+
+bool screenUsesFullStructured2dOnlyDisplay(const SoftPackedScreenStats& stats)
+{
+    constexpr u32 nearlyFullPixelThreshold = (kScreenWidth * kScreenHeight * 7u) / 8u;
+    constexpr u32 dominantLineThreshold = kScreenHeight / 2u;
+    return stats.DisplayModeCounts[1] > dominantLineThreshold
+        && stats.CompModeCounts[7] > nearlyFullPixelThreshold
+        && stats.Structured2DOnlyPixels > nearlyFullPixelThreshold
+        && stats.StructuredSlotPixels == 0u
+        && stats.StructuredAbovePixels == 0u
+        && stats.RegularCaptureUses3dLines == 0u
+        && stats.VramCaptureUses3dLines == 0u
+        && stats.ForceLive3dCompMode7Lines == 0u;
+}
+
 melonDS::u32 expandPackedColor6ToRgba8(melonDS::u32 packedColor)
 {
     const melonDS::u32 r6 = packedColor & 0xFFu;
@@ -330,6 +378,8 @@ void VulkanOutput::shutdown()
     lastPreparedFrame = nullptr;
     lastTopRendererSourceFrame = nullptr;
     lastBottomRendererSourceFrame = nullptr;
+    lastTopComposedFrame = nullptr;
+    lastBottomComposedFrame = nullptr;
     framesSinceTopLive3D = 1024;
     framesSinceBottomLive3D = 1024;
     class4AsymmetricCadenceActive = false;
@@ -370,6 +420,8 @@ void VulkanOutput::releaseTemporalFrameReferences()
     lastPreparedFrame = nullptr;
     lastTopRendererSourceFrame = nullptr;
     lastBottomRendererSourceFrame = nullptr;
+    lastTopComposedFrame = nullptr;
+    lastBottomComposedFrame = nullptr;
     framesSinceTopLive3D = 1024;
     framesSinceBottomLive3D = 1024;
     class4AsymmetricCadenceActive = false;
@@ -403,6 +455,7 @@ void VulkanOutput::invalidateTemporalHistory()
     packedDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 48u : 0u;
     class4PairDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 240u : 0u;
     regularComp7PackedOwnerDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 12u : 0u;
+    structuredComp7HandoffDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 24u : 0u;
     regularComp7PackedOwnerDebugActive = false;
     class4BottomAboveHashValid = false;
     class4BottomAboveHash = 0;
@@ -1651,6 +1704,10 @@ void VulkanOutput::destroyFrameResource(Frame* frame)
         lastTopRendererSourceFrame = nullptr;
     if (lastBottomRendererSourceFrame == frame)
         lastBottomRendererSourceFrame = nullptr;
+    if (lastTopComposedFrame == frame)
+        lastTopComposedFrame = nullptr;
+    if (lastBottomComposedFrame == frame)
+        lastBottomComposedFrame = nullptr;
 
     resources.erase(iterator);
 }
@@ -1786,7 +1843,6 @@ bool VulkanOutput::updateCompositorPackedBuffers(
         screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.topScreenStats);
     const bool bottomStructuredAboveDominant =
         screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.bottomScreenStats);
-
     for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
     {
         const size_t packedRowBase = y * static_cast<size_t>(kAcceleratedStride);
@@ -2615,7 +2671,6 @@ bool VulkanOutput::prepareFrameForPresentation(
             || framesSinceBottomLive3D <= 1u
             || bottomUsesFullRegularComp7
             || (class4VramStructuredPair && live3dOwnerIsTop));
-
     resource.previousTopRendererSourceImage = currentSourceImage;
     resource.previousTopRendererSourceImageView = currentSourceImageView;
     resource.previousTopRendererSourceValid = false;
@@ -2626,6 +2681,13 @@ bool VulkanOutput::prepareFrameForPresentation(
     resource.previousBottomRendererSourceValid = false;
     resource.previousBottomSourceFrame = nullptr;
     resource.previousBottomSourcePending = false;
+    resource.replayTopComposedFromPrevious = false;
+    resource.replayBottomComposedFromPrevious = false;
+    resource.previousTopComposedFrame = nullptr;
+    resource.previousBottomComposedFrame = nullptr;
+    resource.screenSwapToggledFromPrevious =
+        previousResource != nullptr
+        && previousResource->screenSwap != resource.screenSwap;
 
     auto latchPreviousLcdSource = [&](Frame* sourceFrame, bool topLcd) {
         if (sourceFrame == nullptr || sourceFrame == frame)
@@ -2754,6 +2816,117 @@ bool VulkanOutput::prepareFrameForPresentation(
         resource.previousBottomRendererSourceImage = accumulatedBottomHighresImage;
         resource.previousBottomRendererSourceImageView = accumulatedBottomHighresView;
         resource.previousBottomRendererSourceValid = true;
+    }
+
+    const bool topStructuredHandoffOverlay =
+        screenHasStructuredHandoffOverlay(softPackedSnapshot.topScreenStats);
+    const bool bottomStructuredHandoffOverlay =
+        screenHasStructuredHandoffOverlay(softPackedSnapshot.bottomScreenStats);
+    const bool topStructuredHandoffIncomplete =
+        screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.topScreenStats)
+        && screenHasStructuredHandoffOverlay(softPackedSnapshot.bottomScreenStats);
+    const bool bottomStructuredHandoffIncomplete =
+        screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.bottomScreenStats)
+        && screenHasStructuredHandoffOverlay(softPackedSnapshot.topScreenStats);
+    const bool topStructuredHandoffOverlayHasNoCurrent3dSource =
+        resource.screenSwapToggledFromPrevious
+        &&
+        topStructuredHandoffOverlay
+        && (screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.bottomScreenStats)
+            || screenUsesFullStructured2dOnlyDisplay(softPackedSnapshot.bottomScreenStats))
+        && softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines == 0u
+        && softPackedSnapshot.topScreenStats.VramCaptureUses3dLines == 0u
+        && softPackedSnapshot.topScreenStats.ForceLive3dCompMode7Lines == 0u;
+    const bool bottomStructuredHandoffOverlayHasNoCurrent3dSource =
+        resource.screenSwapToggledFromPrevious
+        &&
+        bottomStructuredHandoffOverlay
+        && (screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.topScreenStats)
+            || screenUsesFullStructured2dOnlyDisplay(softPackedSnapshot.topScreenStats))
+        && softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines == 0u
+        && softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines == 0u
+        && softPackedSnapshot.bottomScreenStats.ForceLive3dCompMode7Lines == 0u;
+    if (topStructuredHandoffOverlayHasNoCurrent3dSource)
+        resource.previousTopRendererSourceValid = false;
+    if (bottomStructuredHandoffOverlayHasNoCurrent3dSource)
+        resource.previousBottomRendererSourceValid = false;
+    const bool topStructuredHandoffCarrySource =
+        currentBackendIsGraphics
+        && topStructuredHandoffIncomplete
+        && topAccumulatorAvailable;
+    const bool bottomStructuredHandoffCarrySource =
+        currentBackendIsGraphics
+        && bottomStructuredHandoffIncomplete
+        && bottomAccumulatorAvailable;
+    if (topStructuredHandoffCarrySource)
+    {
+        resource.previousTopRendererSourceImage = accumulatedTopHighresImage;
+        resource.previousTopRendererSourceImageView = accumulatedTopHighresView;
+        resource.previousTopRendererSourceValid = true;
+    }
+    if (bottomStructuredHandoffCarrySource)
+    {
+        resource.previousBottomRendererSourceImage = accumulatedBottomHighresImage;
+        resource.previousBottomRendererSourceImageView = accumulatedBottomHighresView;
+        resource.previousBottomRendererSourceValid = true;
+    }
+    resource.replayTopComposedFromPrevious =
+        currentBackendIsGraphics
+        && topStructuredHandoffIncomplete
+        && lastTopComposedFrame != nullptr
+        && lastTopComposedFrame != frame;
+    resource.replayBottomComposedFromPrevious =
+        currentBackendIsGraphics
+        && bottomStructuredHandoffIncomplete
+        && lastBottomComposedFrame != nullptr
+        && lastBottomComposedFrame != frame;
+    resource.previousTopComposedFrame = resource.replayTopComposedFromPrevious ? lastTopComposedFrame : nullptr;
+    resource.previousBottomComposedFrame = resource.replayBottomComposedFromPrevious ? lastBottomComposedFrame : nullptr;
+
+    if ((topStructuredHandoffCarrySource || bottomStructuredHandoffCarrySource
+            || resource.replayTopComposedFromPrevious || resource.replayBottomComposedFromPrevious
+            || topStructuredHandoffOverlayHasNoCurrent3dSource
+            || bottomStructuredHandoffOverlayHasNoCurrent3dSource)
+        && areRendererDebugBgObjLogsEnabled()
+        && structuredComp7HandoffDebugLogsRemaining == 0)
+    {
+        structuredComp7HandoffDebugLogsRemaining = 12u;
+    }
+    if ((topStructuredHandoffCarrySource || bottomStructuredHandoffCarrySource
+            || resource.replayTopComposedFromPrevious || resource.replayBottomComposedFromPrevious
+            || topStructuredHandoffOverlayHasNoCurrent3dSource
+            || bottomStructuredHandoffOverlayHasNoCurrent3dSource)
+        && areRendererDebugBgObjLogsEnabled()
+        && structuredComp7HandoffDebugLogsRemaining > 0)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
+            frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
+            resource.screenSwap ? 1u : 0u,
+            liveSourceScreenSwap ? 1u : 0u,
+            previousResource != nullptr && previousResource->screenSwap ? 1u : 0u,
+            resource.screenSwapToggledFromPrevious ? 1u : 0u,
+            topStructuredHandoffOverlayHasNoCurrent3dSource ? 1u : 0u,
+            bottomStructuredHandoffOverlayHasNoCurrent3dSource ? 1u : 0u,
+            topStructuredHandoffCarrySource ? 1u : 0u,
+            bottomStructuredHandoffCarrySource ? 1u : 0u,
+            resource.replayTopComposedFromPrevious ? 1u : 0u,
+            resource.replayBottomComposedFromPrevious ? 1u : 0u,
+            topAccumulatorAvailable ? 1u : 0u,
+            bottomAccumulatorAvailable ? 1u : 0u,
+            resource.previousTopRendererSourceValid ? 1u : 0u,
+            resource.previousBottomRendererSourceValid ? 1u : 0u,
+            softPackedSnapshot.topScreenStats.CompModeCounts[7],
+            softPackedSnapshot.topScreenStats.StructuredSlotPixels,
+            softPackedSnapshot.topScreenStats.StructuredAboveVisiblePixels,
+            softPackedSnapshot.topScreenStats.Structured2DOnlyPixels,
+            softPackedSnapshot.bottomScreenStats.CompModeCounts[7],
+            softPackedSnapshot.bottomScreenStats.StructuredSlotPixels,
+            softPackedSnapshot.bottomScreenStats.StructuredAboveVisiblePixels,
+            softPackedSnapshot.bottomScreenStats.Structured2DOnlyPixels,
+            structuredComp7HandoffDebugLogsRemaining);
+        structuredComp7HandoffDebugLogsRemaining--;
     }
     recordTemporalStats(
         softPackedSnapshot,
@@ -3976,6 +4149,119 @@ bool VulkanOutput::dispatchCompositor(
     const u32 groupCountY = (resource.height + 7u) / 8u;
     vkCmdDispatch(resource.commandBuffer, groupCountX, groupCountY, 1);
 
+    auto replayPreviousComposedLcd = [&](Frame* sourceFrame, bool topLcd) {
+        if (sourceFrame == nullptr || sourceFrame == frame)
+            return false;
+
+        const auto sourceIt = resources.find(sourceFrame);
+        if (sourceIt == resources.end())
+            return false;
+
+        const FrameResource& sourceResource = sourceIt->second;
+        if (!sourceResource.hasContent
+            || sourceResource.image == VK_NULL_HANDLE
+            || sourceResource.width != resource.width
+            || sourceResource.height != resource.height)
+        {
+            return false;
+        }
+
+        const u32 safeScale = inputs.scale == 0u ? 1u : inputs.scale;
+        const u32 copyWidth = kScreenWidth * safeScale;
+        const u32 copyHeight = kScreenHeight * safeScale;
+        const u32 copyY = topLcd ? 0u : ((kScreenHeight + 2u) * safeScale);
+        if (copyWidth > resource.width || copyY + copyHeight > resource.height)
+            return false;
+
+        VkImageMemoryBarrier sourceToTransfer{};
+        sourceToTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        sourceToTransfer.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        sourceToTransfer.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        sourceToTransfer.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        sourceToTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        sourceToTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        sourceToTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        sourceToTransfer.image = sourceResource.image;
+        sourceToTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        sourceToTransfer.subresourceRange.levelCount = 1;
+        sourceToTransfer.subresourceRange.layerCount = 1;
+
+        VkImageMemoryBarrier destToTransfer{};
+        destToTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        destToTransfer.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        destToTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        destToTransfer.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        destToTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        destToTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        destToTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        destToTransfer.image = resource.image;
+        destToTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        destToTransfer.subresourceRange.levelCount = 1;
+        destToTransfer.subresourceRange.layerCount = 1;
+
+        std::array<VkImageMemoryBarrier, 2> toTransferBarriers = {sourceToTransfer, destToTransfer};
+        vkCmdPipelineBarrier(
+            resource.commandBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0,
+            nullptr,
+            0,
+            nullptr,
+            static_cast<u32>(toTransferBarriers.size()),
+            toTransferBarriers.data()
+        );
+
+        VkImageCopy copyRegion{};
+        copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.srcSubresource.layerCount = 1;
+        copyRegion.srcOffset = {0, static_cast<int32_t>(copyY), 0};
+        copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.dstSubresource.layerCount = 1;
+        copyRegion.dstOffset = {0, static_cast<int32_t>(copyY), 0};
+        copyRegion.extent = {copyWidth, copyHeight, 1};
+        vkCmdCopyImage(
+            resource.commandBuffer,
+            sourceResource.image,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            resource.image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &copyRegion
+        );
+
+        sourceToTransfer.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        sourceToTransfer.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        sourceToTransfer.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        sourceToTransfer.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        destToTransfer.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        destToTransfer.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        destToTransfer.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        destToTransfer.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        std::array<VkImageMemoryBarrier, 2> fromTransferBarriers = {sourceToTransfer, destToTransfer};
+        vkCmdPipelineBarrier(
+            resource.commandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0,
+            0,
+            nullptr,
+            0,
+            nullptr,
+            static_cast<u32>(fromTransferBarriers.size()),
+            fromTransferBarriers.data()
+        );
+        return true;
+    };
+
+    const bool replayedTopComposed = resource.replayTopComposedFromPrevious
+        && replayPreviousComposedLcd(resource.previousTopComposedFrame, true);
+    const bool replayedBottomComposed = resource.replayBottomComposedFromPrevious
+        && replayPreviousComposedLcd(resource.previousBottomComposedFrame, false);
+    (void)replayedTopComposed;
+    (void)replayedBottomComposed;
+
     if (resource.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(resource.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, resource.timestampQueryPool, 1);
 
@@ -4013,6 +4299,8 @@ bool VulkanOutput::dispatchCompositor(
     resource.hasContent = true;
     resource.previousTopSourcePending = false;
     resource.previousBottomSourcePending = false;
+    lastTopComposedFrame = frame;
+    lastBottomComposedFrame = frame;
     return true;
 }
 
@@ -4362,8 +4650,13 @@ bool VulkanOutput::isFrameReferencedAsPendingPreviousSource(const Frame* frame) 
     if (!initialized || frame == nullptr)
         return false;
 
-    if (frame == lastTopRendererSourceFrame || frame == lastBottomRendererSourceFrame)
+    if (frame == lastTopRendererSourceFrame
+        || frame == lastBottomRendererSourceFrame
+        || frame == lastTopComposedFrame
+        || frame == lastBottomComposedFrame)
+    {
         return true;
+    }
 
     for (const auto& [resourceFrame, resource] : resources)
     {
