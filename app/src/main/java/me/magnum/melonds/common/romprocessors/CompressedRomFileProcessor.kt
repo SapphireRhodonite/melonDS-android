@@ -38,19 +38,20 @@ abstract class CompressedRomFileProcessor(private val context: Context, private 
             context.contentResolver.openInputStream(romUri)?.use { stream ->
                 getNdsEntryStreamInFileStream(stream)?.use { romFileStream ->
                     val romDocument = uriHandler.getUriDocument(romUri)
-                    val romMetadata = getRomMetadataInZipEntry(romFileStream)
-                    val romName = romMetadata.romTitle.takeUnless { it.isBlank() } ?: romDocument?.nameWithoutExtension ?: ""
-                    Rom(
-                        name = romName,
-                        developerName = romMetadata.developerName,
-                        fileName = romDocument?.name ?: "",
-                        uri = romUri,
-                        parentTreeUri = parentUri,
-                        config = if (romMetadata.isDSiWareTitle) RomConfig.forDsiWareTitle() else RomConfig.default(),
-                        lastPlayed = null,
-                        isDsiWareTitle = romMetadata.isDSiWareTitle,
-                        retroAchievementsHash = romMetadata.retroAchievementsHash
-                    )
+                    getRomMetadataInZipEntry(romFileStream)?.let { romMetadata ->
+                        val romName = romMetadata.romTitle.takeUnless { it.isBlank() } ?: romDocument?.nameWithoutExtension ?: ""
+                        Rom(
+                            name = romName,
+                            developerName = romMetadata.developerName,
+                            fileName = romDocument?.name ?: "",
+                            uri = romUri,
+                            parentTreeUri = parentUri,
+                            config = if (romMetadata.isDSiWareTitle) RomConfig.forDsiWareTitle() else RomConfig.default(),
+                            lastPlayed = null,
+                            isDsiWareTitle = romMetadata.isDSiWareTitle,
+                            retroAchievementsHash = romMetadata.retroAchievementsHash
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -110,7 +111,7 @@ abstract class CompressedRomFileProcessor(private val context: Context, private 
         }
     }
 
-    private fun getRomMetadataInZipEntry(inputStream: InputStream): RomMetadata {
+    private fun getRomMetadataInZipEntry(inputStream: InputStream): RomMetadata? {
         return RomProcessor.getRomMetadata(inputStream)
     }
 

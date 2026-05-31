@@ -8,6 +8,8 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.ViewGroup
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -41,6 +43,7 @@ class ShortcutSetupActivity : AppCompatActivity() {
     private val viewModel: RomListViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         val binding = ActivityShortcutSetupBinding.inflate(layoutInflater)
         setContentView(binding.root)

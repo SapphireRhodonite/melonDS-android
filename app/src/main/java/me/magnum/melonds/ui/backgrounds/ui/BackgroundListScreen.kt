@@ -53,7 +53,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.launch
 import me.magnum.melonds.R
 import me.magnum.melonds.common.Permission
@@ -103,10 +102,6 @@ fun BackgroundListScreen(
     val undoMessage = stringResource(R.string.undo)
     val scaffoldState = rememberScaffoldState()
     val coroutineScope = rememberCoroutineScope()
-    val systemUiController = rememberSystemUiController()
-
-    systemUiController.setStatusBarColor(MaterialTheme.colors.primaryVariant)
-    systemUiController.isNavigationBarContrastEnforced = false
 
     Scaffold(
         scaffoldState = scaffoldState,

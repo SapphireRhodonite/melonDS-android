@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.cheats.ui.cheatform
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,14 +42,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.window.core.layout.WindowSizeClass
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import me.magnum.melonds.R
 import me.magnum.melonds.ui.cheats.model.CheatFormDialogState
 import me.magnum.melonds.ui.cheats.model.CheatSubmissionForm
@@ -137,15 +140,20 @@ private fun CheatFormFullscreenDialog(
         }
     }
 
-    val systemUiController = rememberSystemUiController()
     val isSystemInDarkMode = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val view = LocalView.current
+    val insetsController = remember(context, view) {
+        val window = (context as Activity).window
+        WindowCompat.getInsetsController(window, view)
+    }
 
     DisposableEffect(Unit) {
-        val originalState = systemUiController.statusBarDarkContentEnabled
-        systemUiController.statusBarDarkContentEnabled = !isSystemInDarkMode
+        val originalState = insetsController.isAppearanceLightStatusBars
+        insetsController.isAppearanceLightStatusBars = !isSystemInDarkMode
 
         onDispose {
-            systemUiController.statusBarDarkContentEnabled = originalState
+            insetsController.isAppearanceLightStatusBars = originalState
         }
     }
 

@@ -145,7 +145,7 @@ class ExternalPresentation(
                     android.graphics.Rect(it.x, it.y, it.right, it.bottom)
                 }
             } else null
-            window?.systemGestureExclusionRects = touchScreenArea.orEmpty()
+            layoutView.systemGestureExclusionRects = touchScreenArea.orEmpty()
         }
     }
 

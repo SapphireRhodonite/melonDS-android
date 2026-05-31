@@ -2428,12 +2428,14 @@ bool VulkanOutput::prepareFrameForPresentation(
     const bool topStructuredSlotUsesPreviousWhileBottom2dOnly =
         currentBackendIsGraphics
         && !softPackedSnapshot.hasCapture3dSource
+        && resource.screenSwapToggledFromPrevious
         && topUsesPlainStructured3dSlot
         && bottomUsesFullStructured2dOnlyDisplay
         && accumulatedTopHighresValid;
     const bool bottomStructuredSlotUsesPreviousWhileTop2dOnly =
         currentBackendIsGraphics
         && !softPackedSnapshot.hasCapture3dSource
+        && resource.screenSwapToggledFromPrevious
         && bottomUsesPlainStructured3dSlot
         && topUsesFullStructured2dOnlyDisplay
         && accumulatedBottomHighresValid;

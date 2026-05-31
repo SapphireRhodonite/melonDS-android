@@ -544,7 +544,6 @@ dependencies {
     implementation(libs.android.material)
 
     implementation(platform(libs.compose.bom))
-    implementation(libs.accompanist.systemuicontroller)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material)
     implementation(libs.compose.material3)

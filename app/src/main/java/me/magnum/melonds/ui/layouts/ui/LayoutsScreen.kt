@@ -64,7 +64,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import me.magnum.melonds.R
@@ -81,14 +80,10 @@ fun LayoutsScreen(
     onNavigateBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val systemUiController = rememberSystemUiController()
 
     val layouts by viewModel.layouts.collectAsStateWithLifecycle()
     val selectedLayout by viewModel.selectedLayoutId.collectAsStateWithLifecycle()
     val layoutEditorLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
-
-    systemUiController.setStatusBarColor(MaterialTheme.colors.primaryVariant)
-    systemUiController.isNavigationBarContrastEnforced = false
 
     LayoutsScreenContent(
         layouts = layouts ?: emptyList(),

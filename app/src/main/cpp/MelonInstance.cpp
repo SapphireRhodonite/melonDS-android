@@ -206,7 +206,6 @@ bool softPackedFrameUsesTemporal3dHistory(const SoftPackedFrameSnapshot& snapsho
     return snapshot.valid
         && (snapshot.hasCapture3dSource
             || snapshot.captureBackedClass4Only
-            || softPackedFrameUsesPlainStructured3dVs2dOnlyPair(snapshot)
             || softPackedScreenUsesTemporal3dHistory(snapshot.topScreenStats)
             || softPackedScreenUsesTemporal3dHistory(snapshot.bottomScreenStats));
 }
@@ -4552,7 +4551,8 @@ bool MelonInstance::updateVulkanTemporal3dHistoryGate()
         softPackedFrameUsesPlainStructured3dVs2dOnlyPair(previousSoftPackedFrameSnapshot);
     const bool detected = softPackedFrameNeedsReusablePreviousFrame(
         lastSoftPackedFrameSnapshot,
-        previousSoftPackedFrameSnapshot);
+        previousSoftPackedFrameSnapshot)
+        || (alternateOwner && (currentPlainStructuredPair || previousPlainStructuredPair));
     if (detected)
         vulkanTemporal3dHistoryGateFrames = kVulkanTemporal3dHistoryGateFrames;
     else if (vulkanTemporal3dHistoryGateFrames > 0)

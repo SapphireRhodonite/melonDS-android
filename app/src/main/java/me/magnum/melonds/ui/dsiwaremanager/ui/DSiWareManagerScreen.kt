@@ -59,7 +59,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.set
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.flow.collectLatest
 import me.magnum.melonds.R
 import me.magnum.melonds.common.Permission
@@ -91,7 +90,6 @@ fun DSiWareManagerScreen(
     val importingTitle = viewModel.importingTitle.collectAsState(false)
     val context = LocalContext.current
     val showingRomList = rememberSaveable(null) { mutableStateOf(false) }
-    val systemUiController = rememberSystemUiController()
 
     val importTitleFilePickLauncher = rememberDSiWareTitleImportFilePicker(
         onFilePicked = viewModel::importDSiWareTitleFile,
@@ -105,9 +103,6 @@ fun DSiWareManagerScreen(
             viewModel.importTitleToNand(it)
         }
     }
-
-    systemUiController.setStatusBarColor(MaterialTheme.colors.primaryVariant)
-    systemUiController.isNavigationBarContrastEnforced = false
 
     val currentState = state
     Scaffold(

@@ -18,52 +18,55 @@ import kotlin.math.min
 
 object RomProcessor {
 	private val DSIWARE_CATEGORY = 0x00030004.toUInt()
+	private const val MAX_ARM_BOOTCODE_SIZE = 0x3BFE00
 
 	@Suppress("NAME_SHADOWING")
-	fun getRomMetadata(inputStream: InputStream): RomMetadata {
+	fun getRomMetadata(inputStream: InputStream): RomMetadata? {
 		val sectionReader = CachedRomSectionReader(inputStream)
-		val header = sectionReader.readSection(0, 0x160)
+		val header = sectionReader.readSection(0, 0x160) ?: return null
 		val gameCode = String(header, 0x0C, 4)
 
 		val arm9Offset = byteArrayToInt(header, 0x20)
 		val arm9Size = byteArrayToInt(header, 0x2C)
+		if (arm9Size !in 0..MAX_ARM_BOOTCODE_SIZE) return null
 
 		val arm7Offset = byteArrayToInt(header, 0x30)
 		val arm7Size = byteArrayToInt(header, 0x3C)
+		if (arm7Size !in 0..MAX_ARM_BOOTCODE_SIZE) return null
 
 		val bannerOffset = byteArrayToInt(header, 0x68)
 
 		val isDsiWareTitle = if (gameCode[0] == 'H' || gameCode[0] == 'K') {
 			// This is probably a DSi Ware game. Confirm with the title category field.
-			byteArrayToInt(sectionReader.readSection(0x234, 4)).toUInt() == DSIWARE_CATEGORY
+			val categoryData = sectionReader.readSection(0x234, 4) ?: return null
+			byteArrayToInt(categoryData).toUInt() == DSIWARE_CATEGORY
 		} else {
 			false
 		}
 
-		val arm9Bootcode = sectionReader.readSection(arm9Offset, arm9Size)
-		val arm7Bootcode = sectionReader.readSection(arm7Offset, arm7Size)
-		val banner = sectionReader.readSection(bannerOffset, 0xA00)
+		val arm9Bootcode = sectionReader.readSection(arm9Offset, arm9Size) ?: return null
+		val arm7Bootcode = sectionReader.readSection(arm7Offset, arm7Size) ?: return null
+		val banner = sectionReader.readSection(bannerOffset, 0xA00) ?: return null
 
 		val bannerText = readBannerTitleAndDeveloper(banner)
 		val romName = bannerText?.first.orEmpty()
 		val developerName = bannerText?.second.orEmpty()
 
-		val hashDataSize = header.size + arm9Bootcode.size + arm7Bootcode.size + banner.size
-		val retroAchievementsHashData = ByteArray(hashDataSize).apply {
-			header.copyInto(this)
-			arm9Bootcode.copyInto(this, header.size)
-			arm7Bootcode.copyInto(this, header.size + arm9Bootcode.size)
-			banner.copyInto(this, header.size + arm9Bootcode.size + arm7Bootcode.size)
+		val retroAchievementsMd5Digest = MessageDigest.getInstance("MD5").run {
+			update(header)
+			update(arm9Bootcode)
+			update(arm7Bootcode)
+			update(banner)
+			digest()
 		}
 
-		val messageDigest = MessageDigest.getInstance("MD5")
-		val retroAchievemetnsHash = BigInteger(1, messageDigest.digest(retroAchievementsHashData)).toString(16).padStart(32, '0')
+		val retroAchievementsHash = BigInteger(1, retroAchievementsMd5Digest).toString(16).padStart(32, '0')
 
 		return RomMetadata(
 			romName,
 			developerName,
 			isDsiWareTitle,
-			retroAchievemetnsHash,
+			retroAchievementsHash,
 		)
 	}
 
@@ -236,17 +239,20 @@ object RomProcessor {
 		private val cache = ByteArrayOutputStream()
 		private val buffer = ByteArray(8192)
 
-		fun readSection(offset: Int, size: Int): ByteArray {
-			require(offset >= 0) { "Invalid ROM section offset=$offset" }
-			require(size >= 0) { "Invalid ROM section size=$size" }
+		fun readSection(offset: Int, size: Int): ByteArray? {
+			if (offset < 0 || size < 0) {
+				return null
+			}
 			val endOffset = offset + size
-			require(endOffset >= offset) { "ROM section overflows Int range" }
+			if (endOffset < offset) {
+				return null
+			}
 
 			while (cache.size() < endOffset) {
 				val bytesToRead = min(buffer.size, endOffset - cache.size())
 				val read = stream.read(buffer, 0, bytesToRead)
 				if (read <= 0) {
-					throw IllegalStateException("Unexpected end of ROM while reading section offset=$offset size=$size")
+					return null
 				}
 				cache.write(buffer, 0, read)
 			}

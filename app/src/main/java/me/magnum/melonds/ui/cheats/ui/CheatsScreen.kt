@@ -42,7 +42,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
 import me.magnum.melonds.R
@@ -80,7 +79,6 @@ fun CheatsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scaffoldState = rememberScaffoldState(snackbarHostState = snackbarHostState)
     val coroutineScope = rememberCoroutineScope()
-    val systemUiController = rememberSystemUiController()
     val navigateBack = {
         if (navController.previousBackStackEntry == null) {
             // The first screen (the loading screen) is not considered as an entry. So, previousBackStackEntry will be null
@@ -89,9 +87,6 @@ fun CheatsScreen(
             navController.navigateUp()
         }
     }
-
-    systemUiController.setStatusBarColor(MaterialTheme.colors.primaryVariant)
-    systemUiController.isNavigationBarContrastEnforced = false
 
     LaunchedEffect(Unit) {
         viewModel.openGamesEvent.collect {

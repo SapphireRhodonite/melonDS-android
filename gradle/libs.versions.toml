@@ -1,5 +1,4 @@
 [versions]
-accompanist = "0.36.0"
 activity = "1.13.0"
 appCompat = "1.7.1"
 androidxTest = "1.7.0"
@@ -76,7 +75,6 @@ android-material = { module = "com.google.android.material:material", version.re
 
 # Compose
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
-accompanist-systemuicontroller = { module = "com.google.accompanist:accompanist-systemuicontroller", version.ref = "accompanist" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material = { module = "androidx.compose.material:material" }
 compose-material3 = { module = "androidx.compose.material3.adaptive:adaptive" }
