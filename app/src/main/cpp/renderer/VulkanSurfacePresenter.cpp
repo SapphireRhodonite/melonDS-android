@@ -3077,12 +3077,12 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
 
     auto appendQuad = [&](float left, float right, float top, float bottom, float alpha, u32 drawMode, VkDescriptorSet descriptorSet) {
         const u32 firstVertex = static_cast<u32>(vertices.size());
-        vertices.push_back(SurfaceVertex{left, bottom, 0.0f, 0.0f, alpha});
-        vertices.push_back(SurfaceVertex{left, top, 0.0f, 1.0f, alpha});
-        vertices.push_back(SurfaceVertex{right, top, 1.0f, 1.0f, alpha});
-        vertices.push_back(SurfaceVertex{left, bottom, 0.0f, 0.0f, alpha});
-        vertices.push_back(SurfaceVertex{right, top, 1.0f, 1.0f, alpha});
-        vertices.push_back(SurfaceVertex{right, bottom, 1.0f, 0.0f, alpha});
+        vertices.push_back(SurfaceVertex{left, bottom, 0.0f, 1.0f, alpha});
+        vertices.push_back(SurfaceVertex{left, top, 0.0f, 0.0f, alpha});
+        vertices.push_back(SurfaceVertex{right, top, 1.0f, 0.0f, alpha});
+        vertices.push_back(SurfaceVertex{left, bottom, 0.0f, 1.0f, alpha});
+        vertices.push_back(SurfaceVertex{right, top, 1.0f, 0.0f, alpha});
+        vertices.push_back(SurfaceVertex{right, bottom, 1.0f, 1.0f, alpha});
 
         drawCalls.push_back(DrawCall{
             .descriptorSet = descriptorSet,
