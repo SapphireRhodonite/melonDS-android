@@ -28,6 +28,7 @@
                 <action android:name="${applicationId}.SET_INPUT_HELD" />
                 <action android:name="${applicationId}.SAVE_STATE" />
                 <action android:name="${applicationId}.LOAD_STATE" />
+                <action android:name="${applicationId}.DUMP_ROM_SEARCH_STATE" />
             </intent-filter>
         </receiver>
 

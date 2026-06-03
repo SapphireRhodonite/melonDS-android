@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.domain.model.Input
@@ -78,6 +79,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_INPUT_HELD_SUFFIX) -> handleSetInputHeld(intent)
             context.debugCommandAction(ACTION_SAVE_STATE_SUFFIX) -> handleSaveState(context, entryPoint, intent)
             context.debugCommandAction(ACTION_LOAD_STATE_SUFFIX) -> handleLoadState(context, entryPoint, intent)
+            context.debugCommandAction(ACTION_DUMP_ROM_SEARCH_STATE_SUFFIX) -> handleDumpRomSearchState(entryPoint, intent)
             else -> Log.w(TAG, "Ignored unknown action=${intent.action}")
         }
     }
@@ -243,6 +245,40 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         RendererDebugBridge.setRenderer3DDebugControls(featureMask)
         Log.w(TAG, "action=set_renderer_3d_debug_controls mode=release featureMask=$featureMask")
         stepRendererDebugForwardFrameIfPaused("renderer_3d_debug_controls")
+    }
+
+    private suspend fun handleDumpRomSearchState(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+        val query = intent.firstStringExtra(EXTRA_QUERY, EXTRA_VALUE)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        val directories = entryPoint.settingsRepository().getRomSearchDirectories()
+        Log.w(
+            TAG,
+            "action=dump_rom_search_state mode=release directoryCount=${directories.size} query=${query.orEmpty()}",
+        )
+        directories.forEachIndexed { index, uri ->
+            Log.w(TAG, "action=dump_rom_search_dir mode=release index=$index uri=$uri")
+        }
+
+        val normalizedQuery = query?.lowercase(Locale.US)
+        val matches = entryPoint.romsRepository().getRoms().first()
+            .asSequence()
+            .filter { rom ->
+                normalizedQuery == null ||
+                    rom.name.lowercase(Locale.US).contains(normalizedQuery) ||
+                    rom.fileName.lowercase(Locale.US).contains(normalizedQuery) ||
+                    rom.uri.toString().lowercase(Locale.US).contains(normalizedQuery)
+            }
+            .take(50)
+            .toList()
+
+        Log.w(TAG, "action=dump_rom_search_matches mode=release count=${matches.size}")
+        matches.forEachIndexed { index, rom ->
+            Log.w(
+                TAG,
+                "action=dump_rom_search_match mode=release index=$index name=${rom.name} fileName=${rom.fileName} uri=${rom.uri} parentTreeUri=${rom.parentTreeUri}",
+            )
+        }
     }
 
     private fun readRenderer2DDebugControlState(): IntArray {
@@ -1038,6 +1074,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         private const val EXTRA_PATH = "path"
         private const val EXTRA_URI = "uri"
         private const val EXTRA_ROM_URI = "rom_uri"
+        private const val EXTRA_QUERY = "query"
         private const val EXTRA_WAIT_ROM_READY = "wait_rom_ready"
         private const val EXTRA_WAIT_READY = "wait_ready"
         private const val EXTRA_WAIT_TIMEOUT_MS = "wait_timeout_ms"
@@ -1125,6 +1162,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_INPUT_HELD_SUFFIX = "SET_INPUT_HELD"
         private const val ACTION_SAVE_STATE_SUFFIX = "SAVE_STATE"
         private const val ACTION_LOAD_STATE_SUFFIX = "LOAD_STATE"
+        private const val ACTION_DUMP_ROM_SEARCH_STATE_SUFFIX = "DUMP_ROM_SEARCH_STATE"
     }
 
     private fun Context.debugCommandAction(suffix: String): String {
