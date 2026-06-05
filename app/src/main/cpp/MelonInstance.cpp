@@ -6760,7 +6760,8 @@ bool MelonInstance::latchSoftPackedFrameSnapshot(
     auto markCompMode2StructuredPairLines =
         [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
-            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& oppositeLineMeta) {
+            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& oppositeLineMeta,
+            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>* previousOppositeLineMeta) {
             int markedLines = 0;
             for (int y = 0; y < kScreenshotScreenHeight; y++)
             {
@@ -6781,6 +6782,16 @@ bool MelonInstance::latchSoftPackedFrameSnapshot(
                     && (oppositeMeta & kSoftPackedMetaFlagVramCaptureUses3d) == 0u;
                 if (!oppositeRegularCapture3d)
                     continue;
+
+                if (previousOppositeLineMeta != nullptr)
+                {
+                    const u32 previousOppositeMeta = (*previousOppositeLineMeta)[static_cast<size_t>(y)];
+                    const bool previousOppositeDisplayCapture =
+                        ((previousOppositeMeta >> 16u) & 0x3u) == 2u
+                        && (previousOppositeMeta & kSoftPackedMetaFlagRegularCaptureUses3d) == 0u;
+                    if (previousOppositeDisplayCapture)
+                        continue;
+                }
 
                 int compMode2StructuredPixels = 0;
                 const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(kScreenshotScreenWidth);
@@ -6806,13 +6817,15 @@ bool MelonInstance::latchSoftPackedFrameSnapshot(
         : markCompMode2StructuredPairLines(
             lastSoftPackedFrameSnapshot.packedTopControl,
             lastSoftPackedFrameSnapshot.packedTopLineMeta,
-            lastSoftPackedFrameSnapshot.packedBottomLineMeta);
+            lastSoftPackedFrameSnapshot.packedBottomLineMeta,
+            nullptr);
     const int markedBottomCompMode2StructuredPairLines = renderer2dDebugControlsActive
         ? 0
         : markCompMode2StructuredPairLines(
             lastSoftPackedFrameSnapshot.packedBottomControl,
             lastSoftPackedFrameSnapshot.packedBottomLineMeta,
-            lastSoftPackedFrameSnapshot.packedTopLineMeta);
+            lastSoftPackedFrameSnapshot.packedTopLineMeta,
+            previousSoftPackedFrameSnapshot.valid ? &previousSoftPackedFrameSnapshot.packedTopLineMeta : nullptr);
 
     if (const auto* renderer2D = dynamic_cast<const GPU2D::SoftRenderer*>(&nds->GPU.GetRenderer2D()))
     {

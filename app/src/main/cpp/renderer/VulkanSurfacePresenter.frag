@@ -870,7 +870,7 @@ vec4 FUNC_NAME() \
             if (regularCaptureDominant2DPlane) \
                 composed = above2D; \
             if (compMode == 2 \
-                && (compMode2StructuredPair || (regularCaptureUses3d && structuredAboveDominant)) \
+                && (compMode2StructuredPair || (SCREEN_IS_TOP && regularCaptureUses3d && structuredAboveDominant)) \
                 && structuredPlane1Usable2D) \
                 composed = above2D; \
             val1 = composed; \
@@ -947,7 +947,7 @@ vec4 FUNC_NAME() \
                 val1 = val2; \
             } \
             if (compMode == 2 \
-                && (compMode2StructuredPair || (regularCaptureUses3d && structuredAboveDominant)) \
+                && (compMode2StructuredPair || (SCREEN_IS_TOP && regularCaptureUses3d && structuredAboveDominant)) \
                 && (isStructured2DVisible(val2) || structured2DProtectedBlack)) \
                 val1 = val2; \
         } \
