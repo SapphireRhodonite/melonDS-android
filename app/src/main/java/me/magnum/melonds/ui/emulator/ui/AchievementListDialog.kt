@@ -51,6 +51,8 @@ fun AchievementListDialog(
                     modifier = Modifier.fillMaxSize(),
                     state = achievementListState,
                     onViewAchievement = viewModel::viewAchievement,
+                    onViewLeaderboard = viewModel::viewLeaderboard,
+                    onLoadLeaderboardRanking = viewModel::getLeaderboardRanking,
                     onRetry = viewModel::retryLoadAchievements,
                     onDismiss = onDismiss,
                 )

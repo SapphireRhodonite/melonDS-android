@@ -29,8 +29,14 @@ internal fun LeaderboardEntrySubmissionUi(
         modifier = Modifier.padding(8.dp),
         iconData = info.gameIcon,
         state = info.state,
+        accentColor = RaSuccessColor,
     ) {
         var isDescriptionVisible by remember { mutableStateOf(false) }
+        val submissionInfo = if (info.rank > 0 && info.numberOfEntries > 0) {
+            stringResource(R.string.leaderboard_submission_info, info.formattedScore, info.rank, info.numberOfEntries)
+        } else {
+            info.formattedScore
+        }
 
         LaunchedEffect(Unit) {
             delay(500.milliseconds)
@@ -42,12 +48,19 @@ internal fun LeaderboardEntrySubmissionUi(
         AnimatedVisibility(isDescriptionVisible) {
             Column(Modifier.padding(start = 4.dp)) {
                 Text(
-                    text = info.title,
+                    text = stringResource(R.string.leaderboard_submission_success),
                     style = MaterialTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
                 )
                 Text(
-                    text = stringResource(R.string.leaderboard_submission_info, info.formattedScore, info.rank, info.numberOfEntries),
+                    text = info.title,
                     style = MaterialTheme.typography.caption,
+                    maxLines = 1,
+                )
+                Text(
+                    text = submissionInfo,
+                    style = MaterialTheme.typography.caption,
+                    maxLines = 1,
                 )
             }
         }

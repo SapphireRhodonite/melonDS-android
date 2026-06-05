@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.res.ResourcesCompat
@@ -35,6 +36,7 @@ internal fun ServerCommunicationFailedUi(errorInfo: AchievementInfo.ServerCommun
         },
         iconData = ResourcesCompat.getDrawable(LocalResources.current, R.drawable.ic_ra_error, null)!!,
         state = errorInfo.state,
+        accentColor = RaFailureColor,
     ) {
         LaunchedEffect(errorInfo.source) {
             delay(500.milliseconds)
@@ -46,17 +48,21 @@ internal fun ServerCommunicationFailedUi(errorInfo: AchievementInfo.ServerCommun
 
         AnimatedVisibility(isDescriptionVisible) {
             Column(Modifier.padding(start = 4.dp)) {
-                val errorMessage = when (errorInfo.source) {
-                    is AchievementInfo.ServerCommunicationFailed.ErrorSource.AwardAchievement -> "Error unlocking achievement"
-                    is AchievementInfo.ServerCommunicationFailed.ErrorSource.SubmitLeaderboard -> "Error submitting leaderboard entry"
-                }
+                val errorMessage = stringResource(
+                    when (errorInfo.source) {
+                        is AchievementInfo.ServerCommunicationFailed.ErrorSource.AwardAchievement ->
+                            R.string.achievement_submission_failed
+                        is AchievementInfo.ServerCommunicationFailed.ErrorSource.SubmitLeaderboard ->
+                            R.string.leaderboard_submission_failed
+                    }
+                )
 
                 Text(
                     text = errorMessage,
                     style = MaterialTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
                 )
                 Text(
-                    text = "Keep playing while we retry in the background",
+                    text = stringResource(R.string.ra_submission_retry_background),
                     style = MaterialTheme.typography.caption,
                 )
             }

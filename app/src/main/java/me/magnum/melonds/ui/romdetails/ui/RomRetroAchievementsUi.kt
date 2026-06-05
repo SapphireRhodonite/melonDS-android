@@ -588,6 +588,7 @@ private fun PreviewContent() {
                                 ),
                             )
                         ),
+                        leaderboards = emptyList(),
                     ),
                     AchievementSetUiModel(
                         setId = 2,
@@ -604,6 +605,7 @@ private fun PreviewContent() {
                                 ),
                             )
                         ),
+                        leaderboards = emptyList(),
                     ),
                 ),
             ),

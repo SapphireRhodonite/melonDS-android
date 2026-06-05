@@ -1186,6 +1186,7 @@ void RetroAchievementsManager::FrameUpdate()
         const auto frameStart = std::chrono::steady_clock::now();
         const long long frameCpuStartUs = GetCurrentThreadCpuTimeUs();
         rc_client_do_frame(rcClientRuntime);
+        PublishLeaderboardTrackerValuesLocked();
         const long long frameCpuEndUs = GetCurrentThreadCpuTimeUs();
 
         const auto frameElapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1345,20 +1346,37 @@ void RetroAchievementsManager::RcClientEventHandler(const rc_client_event_t* eve
             break;
         case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
             if (event->leaderboard)
+            {
+                manager->RememberLeaderboardTrackerValue(event->leaderboard->id, event->leaderboard->tracker_value);
                 eventMessenger->onLeaderboardAttemptStarted(event->leaderboard->id);
+                if (event->leaderboard->tracker_value && event->leaderboard->tracker_value[0] != '\0')
+                    eventMessenger->onLeaderboardAttemptUpdated(event->leaderboard->id, event->leaderboard->tracker_value);
+            }
             break;
         case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_SHOW:
         case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_UPDATE:
             if (event->leaderboard_tracker)
-                eventMessenger->onLeaderboardAttemptUpdated(event->leaderboard_tracker->id, event->leaderboard_tracker->display);
+            {
+                const auto leaderboardIds = manager->ResolveLeaderboardIdsForTrackerValue(event->leaderboard_tracker->display);
+                for (const uint32_t leaderboardId : leaderboardIds)
+                    eventMessenger->onLeaderboardAttemptUpdated(leaderboardId, event->leaderboard_tracker->display);
+            }
             break;
         case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_HIDE:
             if (event->leaderboard_tracker)
-                eventMessenger->onLeaderboardTrackerHidden(event->leaderboard_tracker->id);
+            {
+                const auto leaderboardIds = manager->ResolveLeaderboardIdsForTrackerValue(event->leaderboard_tracker->display);
+                for (const uint32_t leaderboardId : leaderboardIds)
+                    eventMessenger->onLeaderboardTrackerHidden(leaderboardId);
+                manager->ForgetLeaderboardTrackerValue(event->leaderboard_tracker->display);
+            }
             break;
         case RC_CLIENT_EVENT_LEADERBOARD_FAILED:
             if (event->leaderboard)
+            {
                 eventMessenger->onLeaderboardAttemptCanceled(event->leaderboard->id);
+                manager->ForgetLeaderboardTrackerValue(event->leaderboard->id, event->leaderboard->tracker_value);
+            }
             break;
         case RC_CLIENT_EVENT_LEADERBOARD_SUBMITTED:
         {
@@ -1421,7 +1439,11 @@ void RetroAchievementsManager::RcClientEventHandler(const rc_client_event_t* eve
 
             const char* formattedValue = submittedScore[0] != '\0' ? submittedScore : "0";
             if (leaderboardId != 0)
+            {
                 eventMessenger->onLeaderboardAttemptCompleted(leaderboardId, submittedValue, formattedValue);
+                if (event->leaderboard)
+                    manager->ForgetLeaderboardTrackerValue((uint32_t) leaderboardId, event->leaderboard->tracker_value);
+            }
             break;
         }
         case RC_CLIENT_EVENT_GAME_COMPLETED:
@@ -1706,6 +1728,8 @@ void RetroAchievementsManager::DeactivateRcClientRuntimeLocked()
         rcClientRuntime = nullptr;
     }
 
+    activeLeaderboardIdsByTrackerValue.clear();
+    lastPublishedLeaderboardTrackerValues.clear();
     isRcClientRuntimeActive = false;
     rcClientSlowWindowCount = 0;
     ResetRcClientPerformanceWindowLocked();
@@ -2113,6 +2137,83 @@ int RetroAchievementsManager::ParseLeaderboardScoreByFormat(int format, const ch
         default:
             return ParseIntegerOrDefault(formatted, fallbackValue);
     }
+}
+
+void RetroAchievementsManager::PublishLeaderboardTrackerValuesLocked()
+{
+    if (!rcClientRuntime)
+        return;
+
+    auto eventMessenger = RetroAchievementsManager::EventMessenger.lock();
+    if (!eventMessenger)
+        return;
+
+    for (const auto& loadedLeaderboard : loadedLeaderboards)
+    {
+        const uint32_t leaderboardId = static_cast<uint32_t>(loadedLeaderboard.id);
+        const rc_client_leaderboard_t* leaderboardInfo = rc_client_get_leaderboard_info(rcClientRuntime, leaderboardId);
+        if (!leaderboardInfo || leaderboardInfo->state != RC_CLIENT_LEADERBOARD_STATE_TRACKING)
+        {
+            lastPublishedLeaderboardTrackerValues.erase(leaderboardId);
+            continue;
+        }
+
+        const char* trackerValue = leaderboardInfo->tracker_value;
+        if (!trackerValue || trackerValue[0] == '\0')
+            continue;
+
+        RememberLeaderboardTrackerValue(leaderboardId, trackerValue);
+
+        auto& lastPublishedValue = lastPublishedLeaderboardTrackerValues[leaderboardId];
+        if (lastPublishedValue == trackerValue)
+            continue;
+
+        lastPublishedValue = trackerValue;
+        eventMessenger->onLeaderboardAttemptUpdated(leaderboardId, trackerValue);
+    }
+}
+
+void RetroAchievementsManager::RememberLeaderboardTrackerValue(uint32_t leaderboardId, const char* trackerValue)
+{
+    if (!trackerValue)
+        return;
+
+    auto& leaderboardIds = activeLeaderboardIdsByTrackerValue[trackerValue];
+    if (std::find(leaderboardIds.begin(), leaderboardIds.end(), leaderboardId) == leaderboardIds.end())
+        leaderboardIds.push_back(leaderboardId);
+}
+
+std::vector<uint32_t> RetroAchievementsManager::ResolveLeaderboardIdsForTrackerValue(const char* trackerValue) const
+{
+    if (!trackerValue)
+        return {};
+
+    const auto iterator = activeLeaderboardIdsByTrackerValue.find(trackerValue);
+    if (iterator == activeLeaderboardIdsByTrackerValue.end())
+        return {};
+
+    return iterator->second;
+}
+
+void RetroAchievementsManager::ForgetLeaderboardTrackerValue(uint32_t leaderboardId, const char* trackerValue)
+{
+    if (!trackerValue)
+        return;
+
+    auto iterator = activeLeaderboardIdsByTrackerValue.find(trackerValue);
+    if (iterator == activeLeaderboardIdsByTrackerValue.end())
+        return;
+
+    auto& leaderboardIds = iterator->second;
+    leaderboardIds.erase(std::remove(leaderboardIds.begin(), leaderboardIds.end(), leaderboardId), leaderboardIds.end());
+    if (leaderboardIds.empty())
+        activeLeaderboardIdsByTrackerValue.erase(iterator);
+}
+
+void RetroAchievementsManager::ForgetLeaderboardTrackerValue(const char* trackerValue)
+{
+    if (trackerValue)
+        activeLeaderboardIdsByTrackerValue.erase(trackerValue);
 }
 
 }

@@ -4,6 +4,8 @@
 #include <list>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <vector>
 #include <jni.h>
 #include "MelonEventMessenger.h"
 #include "NDS.h"
@@ -72,6 +74,11 @@ private:
     static void ParseMeasuredProgress(const char* measuredProgress, unsigned int* value, unsigned int* target);
     static int ParseIntegerOrDefault(const char* value, int fallbackValue);
     static int ParseLeaderboardScoreByFormat(int format, const char* formatted, int fallbackValue);
+    void PublishLeaderboardTrackerValuesLocked();
+    void RememberLeaderboardTrackerValue(uint32_t leaderboardId, const char* trackerValue);
+    std::vector<uint32_t> ResolveLeaderboardIdsForTrackerValue(const char* trackerValue) const;
+    void ForgetLeaderboardTrackerValue(uint32_t leaderboardId, const char* trackerValue);
+    void ForgetLeaderboardTrackerValue(const char* trackerValue);
 
     melonDS::NDS* nds;
     rc_client_t* rcClientRuntime;
@@ -93,6 +100,8 @@ private:
     long long rcClientWindowCpuPeakUs;
     std::optional<RARuntimeBridgeConfig> runtimeBridgeConfig;
     std::string loadedRichPresenceScript;
+    std::unordered_map<const char*, std::vector<uint32_t>> activeLeaderboardIdsByTrackerValue;
+    std::unordered_map<uint32_t, std::string> lastPublishedLeaderboardTrackerValues;
 
     static JavaVM* javaVm;
 };

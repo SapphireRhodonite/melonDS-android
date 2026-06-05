@@ -22,6 +22,8 @@ import me.magnum.melonds.ui.romdetails.model.RomAchievementsSummary
 import me.magnum.melonds.ui.romdetails.model.RomRetroAchievementsUiState
 import me.magnum.rcheevosapi.exception.UserTokenExpiredException
 import me.magnum.rcheevosapi.model.RAAchievement
+import me.magnum.rcheevosapi.model.RALeaderboard
+import me.magnum.rcheevosapi.model.RALeaderboardRanking
 import me.magnum.rcheevosapi.model.RAUserAuth
 
 abstract class RetroAchievementsViewModel (
@@ -79,6 +81,7 @@ abstract class RetroAchievementsViewModel (
                                     setIcon = set.iconUrl,
                                     setSummary = buildAchievementsSummary(forHardcoreMode, set.achievements),
                                     buckets = buildAchievementBuckets(set.achievements, runtimeBucketByAchievementId),
+                                    leaderboards = set.leaderboards,
                                 )
                             }
                             val orderedSets = if (runtimeSubsetOrder.isNotEmpty()) {
@@ -135,6 +138,15 @@ abstract class RetroAchievementsViewModel (
     fun viewAchievement(achievement: RAAchievement) {
         val achievementUrl = "https://retroachievements.org/achievement/${achievement.id}"
         _viewAchievementEvent.tryEmit(achievementUrl)
+    }
+
+    fun viewLeaderboard(leaderboard: RALeaderboard) {
+        val leaderboardUrl = "https://retroachievements.org/leaderboardinfo.php?i=${leaderboard.id}"
+        _viewAchievementEvent.tryEmit(leaderboardUrl)
+    }
+
+    suspend fun getLeaderboardRanking(leaderboard: RALeaderboard): Result<RALeaderboardRanking> {
+        return retroAchievementsRepository.getLeaderboardRanking(leaderboard.id)
     }
 
     private fun buildAchievementsSummary(forHardcoreMode: Boolean, userAchievements: List<RAUserAchievement>): RomAchievementsSummary {

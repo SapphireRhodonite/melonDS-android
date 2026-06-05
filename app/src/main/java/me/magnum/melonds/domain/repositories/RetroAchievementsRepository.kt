@@ -11,6 +11,7 @@ import me.magnum.rcheevosapi.model.RAAchievement
 import me.magnum.rcheevosapi.model.RAAwardAchievementResponse
 import me.magnum.rcheevosapi.model.RAGameId
 import me.magnum.rcheevosapi.model.RALeaderboard
+import me.magnum.rcheevosapi.model.RALeaderboardRanking
 import me.magnum.rcheevosapi.model.RASetId
 import me.magnum.rcheevosapi.model.RASubmitLeaderboardEntryResponse
 import me.magnum.rcheevosapi.model.RAUserAuth
@@ -38,6 +39,7 @@ interface RetroAchievementsRepository {
     suspend fun awardAchievement(achievement: RAAchievement, forHardcoreMode: Boolean): Result<RAAwardAchievementResponse>
     suspend fun submitPendingAchievements(): Result<Unit>
     suspend fun getLeaderboard(leaderboardId: Long): RALeaderboard?
+    suspend fun getLeaderboardRanking(leaderboardId: Long, firstEntry: Int = 1, count: Int = 25): Result<RALeaderboardRanking>
     suspend fun submitLeaderboardEntry(leaderboardId: Long, value: Int): Result<RASubmitLeaderboardEntryResponse>
     suspend fun startSession(gameHash: String, forHardcoreMode: Boolean): Result<Unit>
     suspend fun sendSessionHeartbeat(gameHash: String, forHardcoreMode: Boolean, richPresenceDescription: String?)

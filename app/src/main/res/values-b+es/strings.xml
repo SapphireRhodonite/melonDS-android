@@ -382,6 +382,12 @@
     <string name="retro_achievements_load_error">Se produjo un problema al intentar cargar los logros de este juego. Asegúrate de estar conectado a Internet e intenta de nuevo más tarde</string>
     <string name="retro_achievements_no_achievements">No se encontraron RetroAchievements para este juego</string>
     <string name="retro_achievements_relaunch_to_apply_settings">Reinicia la ROM para aplicar la nueva configuración de RetroAchievements</string>
+    <string name="retro_achievements_leaderboards">Leaderboards</string>
+    <string name="leaderboard_view_ranking">Ver ranking</string>
+    <string name="leaderboard_open_on_ra">Abrir en RetroAchievements</string>
+    <string name="leaderboard_ranking_load_failed">No se pudo cargar el ranking de este leaderboard.</string>
+    <string name="leaderboard_ranking_empty">Aún no hay entradas en este leaderboard.</string>
+    <string name="leaderboard_total_entries">%1$d entradas</string>
     <string name="username">Nombre de usuario</string>
     <string name="password">Contraseña</string>
     <string name="retry">Reintentar</string>
@@ -400,6 +406,20 @@
     <string name="achievement_unlocked">¡Logro desbloqueado!</string>
     <string name="achievement_missable">Logro perdible</string>
     <string name="achievement_missable_description">Este logro se puede perder durante una partida</string>
+    <string name="challenge_started">Reto iniciado</string>
+    <string name="challenge_completed">Reto completado</string>
+    <string name="challenge_failed">Reto fallido</string>
+    <string name="leaderboard_attempt_started">Intento de leaderboard iniciado</string>
+    <string name="leaderboard_attempt_failed">Leaderboard fallido</string>
+    <string name="leaderboard_attempt_value">%1$s: %2$s</string>
+    <string name="leaderboard_attempt_time_label">Tiempo</string>
+    <string name="leaderboard_attempt_score_label">Puntuación</string>
+    <string name="leaderboard_attempt_value_label">Valor</string>
+    <string name="leaderboard_submission_success">Leaderboard enviado</string>
+    <string name="leaderboard_submission_failed">Error al enviar leaderboard</string>
+    <string name="achievement_submission_failed">Error al enviar logro</string>
+    <string name="ra_submission_retry_background">Sigue jugando; reintentaremos en segundo plano</string>
+    <string name="leaderboard_submission_info">%1$s • Puesto %2$d de %3$d</string>
        
        <string-array name="fast_forward_speed_multiplier_options">
         <item>Ilimitado</item>

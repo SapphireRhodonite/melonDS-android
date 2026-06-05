@@ -19,6 +19,7 @@ import me.magnum.melonds.common.suspendRunCatching
 import me.magnum.rcheevosapi.dto.AwardAchievementResponseDto
 import me.magnum.rcheevosapi.dto.GameAchievementSetsDto
 import me.magnum.rcheevosapi.dto.HashLibraryDto
+import me.magnum.rcheevosapi.dto.RALeaderboardInfoDto
 import me.magnum.rcheevosapi.dto.RASubmitLeaderboardEntryResponseDto
 import me.magnum.rcheevosapi.dto.UserLoginDto
 import me.magnum.rcheevosapi.dto.UserUnlocksDto
@@ -29,6 +30,8 @@ import me.magnum.rcheevosapi.exception.UserTokenExpiredException
 import me.magnum.rcheevosapi.model.RAAwardAchievementResponse
 import me.magnum.rcheevosapi.model.RAGame
 import me.magnum.rcheevosapi.model.RAGameId
+import me.magnum.rcheevosapi.model.RALeaderboardRanking
+import me.magnum.rcheevosapi.model.RALeaderboardRankingEntry
 import me.magnum.rcheevosapi.model.RASubmitLeaderboardEntryResponse
 import me.magnum.rcheevosapi.model.RAUserAuth
 import okhttp3.Call
@@ -39,7 +42,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.net.URI
 import java.net.URLEncoder
+import java.text.NumberFormat
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.reflect.KClass
@@ -68,6 +74,8 @@ class RAApi(
         private const val PARAMETER_LEADERBOARD_ID = "i"
         private const val PARAMETER_SCORE = "s"
         private const val PARAMETER_RCHEEVOS_VERSION = "l"
+        private const val PARAMETER_OFFSET = "o"
+        private const val PARAMETER_COUNT = "c"
 
         private const val VALUE_HARDMODE_DISABLED = "0"
         private const val VALUE_HARDMODE_ENABLED = "1"
@@ -79,6 +87,7 @@ class RAApi(
         private const val REQUEST_START_SESSION = "startsession"
         private const val REQUEST_AWARD_ACHIEVEMENT = "awardachievement"
         private const val REQUEST_SUBMIT_LEADERBOARD_ENTRY = "submitlbentry"
+        private const val REQUEST_LEADERBOARD_INFO = "lbinfo"
         private const val REQUEST_PING = "ping"
 
         private const val RCHEEVOS_VERSION = "12.3.0"
@@ -224,6 +233,40 @@ class RAApi(
             RASubmitLeaderboardEntryResponse(
                 rank = it.response.rankInfo.rank,
                 numEntries = it.response.rankInfo.numEntries,
+            )
+        }
+    }
+
+    suspend fun getLeaderboardRanking(
+        leaderboardId: Long,
+        firstEntry: Int = 1,
+        count: Int = 25,
+    ): Result<RALeaderboardRanking> {
+        val offset = firstEntry.coerceAtLeast(1) - 1
+        val entryCount = count.coerceIn(1, 100)
+
+        return get<RALeaderboardInfoDto>(
+            mapOf(
+                PARAMETER_REQUEST to REQUEST_LEADERBOARD_INFO,
+                PARAMETER_LEADERBOARD_ID to leaderboardId.toString(),
+                PARAMETER_OFFSET to offset.toString(),
+                PARAMETER_COUNT to entryCount.toString(),
+            )
+        ).suspendMapCatching { info ->
+            val data = info.leaderboardData
+            RALeaderboardRanking(
+                leaderboardId = leaderboardId,
+                totalEntries = data.totalEntries,
+                entries = data.entries.map { entry ->
+                    RALeaderboardRankingEntry(
+                        user = entry.user,
+                        rank = entry.rank,
+                        rawScore = entry.score,
+                        formattedScore = formatLeaderboardScore(data.format, entry.score),
+                        submittedAtEpochSeconds = entry.dateSubmitted,
+                        avatarUrl = entry.avatarUrl?.takeIf { it.isNotBlank() }?.let { URI(it).toURL() },
+                    )
+                },
             )
         }
     }
@@ -421,5 +464,68 @@ class RAApi(
         }
 
         throw UnsuccessfulRequestException("RA response has invalid Success value: $content")
+    }
+
+    private fun formatLeaderboardScore(format: String, score: Int): String {
+        return when (format.uppercase(Locale.ROOT)) {
+            "SCORE", "POINTS", "OTHER" -> "%06d".format(Locale.US, score)
+            "TIME" -> formatCentiseconds(score.toLong() * 10L / 6L)
+            "MILLISECS" -> formatCentiseconds(score.toLong())
+            "TIMESECS", "SECS" -> formatSeconds(score.toLong())
+            "SECS_AS_MINS" -> formatMinutes(score.toLong() / 60L)
+            "MINUTES" -> formatMinutes(score.toLong())
+            "FLOAT1" -> "%,.1f".format(Locale.US, score.toDouble())
+            "FLOAT2" -> "%,.2f".format(Locale.US, score.toDouble())
+            "FLOAT3" -> "%,.3f".format(Locale.US, score.toDouble())
+            "FLOAT4" -> "%,.4f".format(Locale.US, score.toDouble())
+            "FLOAT5" -> "%,.5f".format(Locale.US, score.toDouble())
+            "FLOAT6" -> "%,.6f".format(Locale.US, score.toDouble())
+            "FIXED1" -> formatFixed(score, 10, 1)
+            "FIXED2" -> formatFixed(score, 100, 2)
+            "FIXED3" -> formatFixed(score, 1000, 3)
+            "TENS" -> if (score == 0) "0" else formatNumber(score.toLong() * 10L)
+            "HUNDREDS" -> if (score == 0) "0" else formatNumber(score.toLong() * 100L)
+            "THOUSANDS" -> if (score == 0) "0" else formatNumber(score.toLong() * 1000L)
+            "UNFORMATTED" -> score.toUInt().toString()
+            "UNSIGNED" -> score.toUInt().toString()
+            else -> formatNumber(score.toLong())
+        }
+    }
+
+    private fun formatCentiseconds(rawCentiseconds: Long): String {
+        val centiseconds = rawCentiseconds.coerceAtLeast(0L)
+        val seconds = centiseconds / 100L
+        val remainingCentiseconds = centiseconds % 100L
+        return "${formatSeconds(seconds)}.%02d".format(Locale.US, remainingCentiseconds)
+    }
+
+    private fun formatSeconds(rawSeconds: Long): String {
+        val totalSeconds = rawSeconds.coerceAtLeast(0L)
+        val totalMinutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        if (totalMinutes < 60L) {
+            return "%d:%02d".format(Locale.US, totalMinutes, seconds)
+        }
+
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return "%dh%02d:%02d".format(Locale.US, hours, minutes, seconds)
+    }
+
+    private fun formatMinutes(rawMinutes: Long): String {
+        val totalMinutes = rawMinutes.coerceAtLeast(0L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return "%dh%02d".format(Locale.US, hours, minutes)
+    }
+
+    private fun formatFixed(score: Int, factor: Int, decimals: Int): String {
+        val whole = score / factor
+        val remainder = kotlin.math.abs(score % factor)
+        return "${formatNumber(whole.toLong())}.${remainder.toString().padStart(decimals, '0')}"
+    }
+
+    private fun formatNumber(value: Long): String {
+        return NumberFormat.getIntegerInstance(Locale.US).format(value)
     }
 }

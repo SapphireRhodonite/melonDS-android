@@ -45,6 +45,7 @@ import me.magnum.rcheevosapi.model.RAAwardAchievementResponse
 import me.magnum.rcheevosapi.model.RAGame
 import me.magnum.rcheevosapi.model.RAGameId
 import me.magnum.rcheevosapi.model.RALeaderboard
+import me.magnum.rcheevosapi.model.RALeaderboardRanking
 import me.magnum.rcheevosapi.model.RASetId
 import me.magnum.rcheevosapi.model.RASubmitLeaderboardEntryResponse
 import me.magnum.rcheevosapi.model.RAUserAuth
@@ -275,6 +276,10 @@ class AndroidRetroAchievementsRepository(
 
     override suspend fun getLeaderboard(leaderboardId: Long): RALeaderboard? {
         return retroAchievementsDao.getLeaderboard(leaderboardId)?.mapToModel()
+    }
+
+    override suspend fun getLeaderboardRanking(leaderboardId: Long, firstEntry: Int, count: Int): Result<RALeaderboardRanking> {
+        return raApi.getLeaderboardRanking(leaderboardId, firstEntry, count)
     }
 
     override suspend fun submitLeaderboardEntry(leaderboardId: Long, value: Int): Result<RASubmitLeaderboardEntryResponse> {

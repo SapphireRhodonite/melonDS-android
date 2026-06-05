@@ -22,13 +22,15 @@ import me.magnum.rcheevosapi.model.RAAchievement
 enum class AchievementTypeFilter(val displayOrder: Int) {
     All(0),
     Core(1),
-    Unofficial(2),
+    Leaderboards(2),
+    Unofficial(3),
     ;
 
     fun matches(type: RAAchievement.Type): Boolean {
         return when (this) {
             All -> true
             Core -> type == RAAchievement.Type.CORE
+            Leaderboards -> false
             Unofficial -> type == RAAchievement.Type.UNOFFICIAL
         }
     }
@@ -74,11 +76,13 @@ enum class AchievementStateFilter(
 @Composable
 fun AchievementFiltersRow(
     typeFilter: AchievementTypeFilter,
+    availableTypeFilters: List<AchievementTypeFilter> = AchievementTypeFilter.entries.sortedBy { it.displayOrder },
     onTypeFilterChanged: (AchievementTypeFilter) -> Unit,
     stateFilter: AchievementStateFilter,
     availableStateFilters: List<AchievementStateFilter>,
     onStateFilterChanged: (AchievementStateFilter) -> Unit,
     modifier: Modifier = Modifier,
+    showStateFilter: Boolean = true,
 ) {
     Row(
         modifier = modifier,
@@ -86,20 +90,22 @@ fun AchievementFiltersRow(
     ) {
         FilterGroup(
             title = stringResource(id = R.string.retro_achievements_filter_type),
-            options = AchievementTypeFilter.entries.sortedBy { it.displayOrder },
+            options = availableTypeFilters.sortedBy { it.displayOrder },
             selected = typeFilter,
             onSelected = onTypeFilterChanged,
             optionLabel = { getTypeFilterLabel(it) },
             modifier = Modifier.weight(1f),
         )
-        FilterGroup(
-            title = stringResource(id = R.string.retro_achievements_filter_state),
-            options = availableStateFilters.sortedBy { it.displayOrder },
-            selected = stateFilter,
-            onSelected = onStateFilterChanged,
-            optionLabel = { getStateFilterLabel(it) },
-            modifier = Modifier.weight(1f),
-        )
+        if (showStateFilter) {
+            FilterGroup(
+                title = stringResource(id = R.string.retro_achievements_filter_state),
+                options = availableStateFilters.sortedBy { it.displayOrder },
+                selected = stateFilter,
+                onSelected = onStateFilterChanged,
+                optionLabel = { getStateFilterLabel(it) },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -148,6 +154,7 @@ private fun getTypeFilterLabel(filter: AchievementTypeFilter): String {
     return when (filter) {
         AchievementTypeFilter.All -> stringResource(id = R.string.retro_achievements_filter_all)
         AchievementTypeFilter.Core -> stringResource(id = R.string.retro_achievements_filter_core)
+        AchievementTypeFilter.Leaderboards -> stringResource(id = R.string.retro_achievements_leaderboards)
         AchievementTypeFilter.Unofficial -> stringResource(id = R.string.retro_achievements_filter_unofficial)
     }
 }

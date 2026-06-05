@@ -11,10 +11,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Card
 import androidx.compose.runtime.Composable
@@ -38,6 +42,7 @@ internal fun AchievementInfoUi(
     modifier: Modifier = Modifier,
     iconData: Any,
     state: AchievementInfoState,
+    accentColor: Color? = null,
     body: (@Composable RowScope.() -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
@@ -65,9 +70,21 @@ internal fun AchievementInfoUi(
             shape = RoundedCornerShape(4.dp),
         ) {
             Row(
-                modifier = Modifier.padding(4.dp),
+                modifier = Modifier
+                    .height(IntrinsicSize.Min)
+                    .padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (accentColor != null) {
+                    Box(
+                        Modifier
+                            .padding(end = 4.dp)
+                            .width(3.dp)
+                            .fillMaxHeight()
+                            .background(accentColor, RoundedCornerShape(2.dp))
+                    )
+                }
+
                 if (LocalInspectionMode.current) {
                     Box(Modifier.size(32.dp).background(Color.Gray))
                 } else {
