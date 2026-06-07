@@ -372,6 +372,8 @@ private:
         bool bottomStructuredHandoffSuppress3d{};
         bool topPackedCarryFromPrevious{};
         bool bottomPackedCarryFromPrevious{};
+        bool topPureAlternatingVramCapture{};
+        bool bottomPureAlternatingVramCapture{};
         bool hasSoftPackedDebugData{};
         SoftPackedScreenStats topScreenStats{};
         SoftPackedScreenStats bottomScreenStats{};

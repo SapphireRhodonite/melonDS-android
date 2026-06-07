@@ -109,6 +109,21 @@ bool screenUsesPlainStructured3dSlot(const SoftPackedScreenStats& stats)
         && stats.ForceLive3dCompMode7Lines == 0u;
 }
 
+bool screenUsesFullVramCaptureOnly(const SoftPackedScreenStats& stats)
+{
+    constexpr u32 dominantLineThreshold = kScreenHeight / 2u;
+    return stats.DisplayModeCounts[2] > dominantLineThreshold
+        && stats.VramCaptureUses3dLines > dominantLineThreshold
+        && stats.DisplayModeCounts[1] == 0u
+        && stats.RegularCaptureUses3dLines == 0u
+        && stats.ForceLive3dCompMode7Lines == 0u
+        && stats.StructuredSlotPixels == 0u
+        && stats.StructuredAbovePixels == 0u
+        && stats.StructuredAboveVisiblePixels == 0u
+        && stats.Structured2DOnlyPixels == 0u
+        && stats.Structured2DOnlyVisiblePixels == 0u;
+}
+
 bool screenHasStructuredHandoffOverlay(const SoftPackedScreenStats& stats)
 {
     constexpr u32 dominantPixelThreshold = (kScreenWidth * kScreenHeight * 4u) / 5u;
@@ -1637,6 +1652,8 @@ bool VulkanOutput::createFrameResource(Frame* frame, u32 width, u32 height)
     resource->bottomStructuredHandoffSuppress3d = false;
     resource->topPackedCarryFromPrevious = false;
     resource->bottomPackedCarryFromPrevious = false;
+    resource->topPureAlternatingVramCapture = false;
+    resource->bottomPureAlternatingVramCapture = false;
     resource->submissionValue = 0;
     resource->width = width;
     resource->height = height;
@@ -2551,6 +2568,14 @@ bool VulkanOutput::prepareFrameForPresentation(
         && resource.screenSwapToggledFromPrevious
         && (topUsesPlainStructuredComp7Slot || bottomUsesPlainStructuredComp7Slot)
         && topUsesCurrentCapture3d != bottomUsesCurrentCapture3d;
+    const bool topVramBottomPureStructuredComp7Pair =
+        currentBackendIsGraphics
+        && class4VramStructuredPair
+        && topUsesVramCapture3d
+        && !bottomUsesVramCapture3d
+        && bottomUsesPlainStructuredComp7Slot
+        && screenUsesFullVramCaptureOnly(softPackedSnapshot.topScreenStats)
+        && !resource.screenSwap;
     const bool preservePackedOwnerForTopVramBottomPlainStructuredComp7 =
         currentBackendIsGraphics
         && class4VramStructuredPair
@@ -2561,7 +2586,8 @@ bool VulkanOutput::prepareFrameForPresentation(
         && softPackedSnapshot.bottomScreenStats.DisplayModeCounts[1] == kScreenHeight
         && softPackedSnapshot.topScreenStats.StructuredSlotPixels == 0u
         && softPackedSnapshot.bottomScreenStats.StructuredAbovePixels == 0u
-        && !resource.screenSwap;
+        && !resource.screenSwap
+        && !topVramBottomPureStructuredComp7Pair;
     const bool topStructuredSlotUsesPreviousWhileBottom2dOnly =
         currentBackendIsGraphics
         && !softPackedSnapshot.hasCapture3dSource
@@ -2671,6 +2697,23 @@ bool VulkanOutput::prepareFrameForPresentation(
         && !bottomUsesCurrentCapture3d
         && topUsesCurrentCapture3d
         && liveSourceScreenSwap;
+    const bool topPlainStructuredComp7PureAlternatingVramPair =
+        topPlainStructuredComp7UsesOppositeLive3d
+        && preservePackedOwnerForAlternatingPlainStructuredComp7
+        && screenUsesFullVramCaptureOnly(softPackedSnapshot.bottomScreenStats);
+    const bool bottomPlainStructuredComp7PureAlternatingVramPair =
+        bottomPlainStructuredComp7UsesOppositeLive3d
+        && preservePackedOwnerForAlternatingPlainStructuredComp7
+        && screenUsesFullVramCaptureOnly(softPackedSnapshot.topScreenStats);
+    const bool topPlainStructuredComp7PureAlternatingVramCadenceCarry =
+        topPlainStructuredComp7PureAlternatingVramPair
+        && class4BottomDominantAsymmetricCarry
+        && bottomStructuredAboveTransitionActive
+        && bottomUsesVramCapture3d
+        && topUsesStructured3d
+        && topUsesPlainStructuredComp7Slot;
+    resource.topPureAlternatingVramCapture = bottomPlainStructuredComp7PureAlternatingVramPair;
+    resource.bottomPureAlternatingVramCapture = topPlainStructuredComp7PureAlternatingVramPair;
     const bool topUsesScreenWideCaptureBackedComp4 =
         softPackedSnapshot.topScreenStats.CaptureBackedComp4Lines > currentCaptureLineThreshold;
     const bool bottomUsesScreenWideCaptureBackedComp4 =
@@ -2868,7 +2911,10 @@ bool VulkanOutput::prepareFrameForPresentation(
                 || (bottomStructuredHandoffNoCurrent3d && !liveSourceScreenSwap));
         replaceAccumulatedHighres =
             currentBackendIsGraphics
-            && ((class4VramStructuredPair && live3dOwnerWasSameLcdLastFrame)
+            && ((class4VramStructuredPair
+                    && live3dOwnerWasSameLcdLastFrame
+                    && !topPlainStructuredComp7PureAlternatingVramPair
+                    && !bottomPlainStructuredComp7PureAlternatingVramPair)
                 || asymmetricFullRegularComp7
                 || liveOwnerUsesScreenWideRegularCapture
                 || structuredHandoffLiveOwnerNeedsReplace);
@@ -2943,8 +2989,12 @@ bool VulkanOutput::prepareFrameForPresentation(
             || framesSinceTopLive3D <= 1u
             || topUsesFullRegularComp7
             || topStructuredSlotUsesPreviousWhileBottom2dOnly
-            || topPlainStructuredComp7UsesOppositeLive3d
-            || (class4VramStructuredPair && !live3dOwnerIsTop));
+            || topPlainStructuredComp7PureAlternatingVramCadenceCarry
+            || (topPlainStructuredComp7UsesOppositeLive3d
+                && !topPlainStructuredComp7PureAlternatingVramPair)
+            || (class4VramStructuredPair
+                && !live3dOwnerIsTop
+                && !topPlainStructuredComp7PureAlternatingVramPair));
     const bool bottomNeedsAccumulatedHighres =
         bottomCanUseAccumulatedHighres
         && (!bottomStructuredHandoffNoCurrent3d || !live3dOwnerIsTop)
@@ -2952,8 +3002,11 @@ bool VulkanOutput::prepareFrameForPresentation(
             || framesSinceBottomLive3D <= 1u
             || bottomUsesFullRegularComp7
             || bottomStructuredSlotUsesPreviousWhileTop2dOnly
-            || bottomPlainStructuredComp7UsesOppositeLive3d
-            || (class4VramStructuredPair && live3dOwnerIsTop));
+            || (bottomPlainStructuredComp7UsesOppositeLive3d
+                && !bottomPlainStructuredComp7PureAlternatingVramPair)
+            || (class4VramStructuredPair
+                && live3dOwnerIsTop
+                && !bottomPlainStructuredComp7PureAlternatingVramPair));
     resource.previousTopRendererSourceImage = currentSourceImage;
     resource.previousTopRendererSourceImageView = currentSourceImageView;
     resource.previousTopRendererSourceValid = false;
@@ -3204,12 +3257,36 @@ bool VulkanOutput::prepareFrameForPresentation(
         && topUsesPlainStructuredComp7Slot
         && lastBottomComposedFrame != nullptr
         && lastBottomComposedFrame != frame;
+    const bool topPlainStructuredComp7CarriesPreviousPureVram =
+        currentBackendIsGraphics
+        && resource.screenSwapToggledFromPrevious
+        && topUsesPlainStructuredComp7Slot
+        && !topUsesCurrentCapture3d
+        && !bottomUsesCurrentCapture3d
+        && previousResource != nullptr
+        && previousResource->topPureAlternatingVramCapture
+        && lastTopComposedFrame != nullptr
+        && lastTopComposedFrame != frame;
+    const bool bottomPlainStructuredComp7CarriesPreviousPureVram =
+        currentBackendIsGraphics
+        && resource.screenSwapToggledFromPrevious
+        && bottomUsesPlainStructuredComp7Slot
+        && !bottomUsesCurrentCapture3d
+        && !topUsesCurrentCapture3d
+        && previousResource != nullptr
+        && previousResource->bottomPureAlternatingVramCapture
+        && lastBottomComposedFrame != nullptr
+        && lastBottomComposedFrame != frame;
     const bool topPlainStructuredComp7ReplayComposed =
-        topPlainStructuredComp7UsesOppositeLive3d
+        ((topPlainStructuredComp7UsesOppositeLive3d
+            && !topPlainStructuredComp7PureAlternatingVramPair)
+            || topPlainStructuredComp7CarriesPreviousPureVram)
         && lastTopComposedFrame != nullptr
         && lastTopComposedFrame != frame;
     const bool bottomPlainStructuredComp7ReplayComposed =
-        bottomPlainStructuredComp7UsesOppositeLive3d
+        ((bottomPlainStructuredComp7UsesOppositeLive3d
+            && !bottomPlainStructuredComp7PureAlternatingVramPair)
+            || bottomPlainStructuredComp7CarriesPreviousPureVram)
         && lastBottomComposedFrame != nullptr
         && lastBottomComposedFrame != frame;
     const bool topPlainStructuredSlotDuringOppositeNoCurrentHandoff =
@@ -3271,6 +3348,10 @@ bool VulkanOutput::prepareFrameForPresentation(
             || bottomStructuredHandoffBlankCarry
             || topPlainStructuredComp7UsesOppositeLive3d
             || bottomPlainStructuredComp7UsesOppositeLive3d
+            || topPlainStructuredComp7PureAlternatingVramPair
+            || bottomPlainStructuredComp7PureAlternatingVramPair
+            || topPlainStructuredComp7CarriesPreviousPureVram
+            || bottomPlainStructuredComp7CarriesPreviousPureVram
             || topPlainStructuredSlotDuringOppositeNoCurrentHandoff
             || bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff)
         && areRendererDebugBgObjLogsEnabled()
@@ -3288,6 +3369,10 @@ bool VulkanOutput::prepareFrameForPresentation(
             || bottomStructuredHandoffOverlayHasNoCurrent3dSource
             || topPlainStructuredComp7UsesOppositeLive3d
             || bottomPlainStructuredComp7UsesOppositeLive3d
+            || topPlainStructuredComp7PureAlternatingVramPair
+            || bottomPlainStructuredComp7PureAlternatingVramPair
+            || topPlainStructuredComp7CarriesPreviousPureVram
+            || bottomPlainStructuredComp7CarriesPreviousPureVram
             || topPlainStructuredSlotDuringOppositeNoCurrentHandoff
             || bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff)
         && areRendererDebugBgObjLogsEnabled()
@@ -3295,7 +3380,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
-            "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topNoCurrent=%u bottomNoCurrent=%u topSuppress3d=%u bottomSuppress3d=%u replaceAcc=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topBlankCarry=%u bottomBlankCarry=%u topPlainOpposite=%u bottomPlainOpposite=%u topPlainOppositeNoCurrent=%u bottomPlainOppositeNoCurrent=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
+            "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topNoCurrent=%u bottomNoCurrent=%u topSuppress3d=%u bottomSuppress3d=%u replaceAcc=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topBlankCarry=%u bottomBlankCarry=%u topPlainOpposite=%u bottomPlainOpposite=%u topPureAltVram=%u bottomPureAltVram=%u topCarryPureVram=%u bottomCarryPureVram=%u topPlainOppositeNoCurrent=%u bottomPlainOppositeNoCurrent=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
             liveSourceScreenSwap ? 1u : 0u,
@@ -3312,6 +3397,10 @@ bool VulkanOutput::prepareFrameForPresentation(
             bottomStructuredHandoffBlankCarry ? 1u : 0u,
             topPlainStructuredComp7UsesOppositeLive3d ? 1u : 0u,
             bottomPlainStructuredComp7UsesOppositeLive3d ? 1u : 0u,
+            topPlainStructuredComp7PureAlternatingVramPair ? 1u : 0u,
+            bottomPlainStructuredComp7PureAlternatingVramPair ? 1u : 0u,
+            topPlainStructuredComp7CarriesPreviousPureVram ? 1u : 0u,
+            bottomPlainStructuredComp7CarriesPreviousPureVram ? 1u : 0u,
             topPlainStructuredSlotDuringOppositeNoCurrentHandoff ? 1u : 0u,
             bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff ? 1u : 0u,
             topStructuredHandoffCarrySource ? 1u : 0u,
