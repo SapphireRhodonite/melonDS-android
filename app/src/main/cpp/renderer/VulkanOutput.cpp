@@ -2982,6 +2982,14 @@ bool VulkanOutput::prepareFrameForPresentation(
         if (framesSinceBottomLive3D < 1024)
             framesSinceBottomLive3D++;
     }
+    const bool topPlainStructuredComp7PureAlternatingVramNoAboveCarry =
+        topPlainStructuredComp7PureAlternatingVramPair
+        && class4NoAboveVramStructuredPair
+        && bottomUsesVramCapture3d
+        && !topUsesVramCapture3d
+        && topUsesStructured3d
+        && topUsesPlainStructuredComp7Slot
+        && !live3dOwnerIsTop;
     const bool topNeedsAccumulatedHighres =
         topCanUseAccumulatedHighres
         && (!topStructuredHandoffNoCurrent3d || live3dOwnerIsTop)
@@ -3280,6 +3288,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     const bool topPlainStructuredComp7ReplayComposed =
         ((topPlainStructuredComp7UsesOppositeLive3d
             && !topPlainStructuredComp7PureAlternatingVramPair)
+            || topPlainStructuredComp7PureAlternatingVramNoAboveCarry
             || topPlainStructuredComp7CarriesPreviousPureVram)
         && lastTopComposedFrame != nullptr
         && lastTopComposedFrame != frame;
@@ -3352,6 +3361,7 @@ bool VulkanOutput::prepareFrameForPresentation(
             || bottomPlainStructuredComp7PureAlternatingVramPair
             || topPlainStructuredComp7CarriesPreviousPureVram
             || bottomPlainStructuredComp7CarriesPreviousPureVram
+            || topPlainStructuredComp7PureAlternatingVramNoAboveCarry
             || topPlainStructuredSlotDuringOppositeNoCurrentHandoff
             || bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff)
         && areRendererDebugBgObjLogsEnabled()
@@ -3373,6 +3383,7 @@ bool VulkanOutput::prepareFrameForPresentation(
             || bottomPlainStructuredComp7PureAlternatingVramPair
             || topPlainStructuredComp7CarriesPreviousPureVram
             || bottomPlainStructuredComp7CarriesPreviousPureVram
+            || topPlainStructuredComp7PureAlternatingVramNoAboveCarry
             || topPlainStructuredSlotDuringOppositeNoCurrentHandoff
             || bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff)
         && areRendererDebugBgObjLogsEnabled()
@@ -3380,7 +3391,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
-            "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topNoCurrent=%u bottomNoCurrent=%u topSuppress3d=%u bottomSuppress3d=%u replaceAcc=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topBlankCarry=%u bottomBlankCarry=%u topPlainOpposite=%u bottomPlainOpposite=%u topPureAltVram=%u bottomPureAltVram=%u topCarryPureVram=%u bottomCarryPureVram=%u topPlainOppositeNoCurrent=%u bottomPlainOppositeNoCurrent=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
+            "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topNoCurrent=%u bottomNoCurrent=%u topSuppress3d=%u bottomSuppress3d=%u replaceAcc=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topBlankCarry=%u bottomBlankCarry=%u topPlainOpposite=%u bottomPlainOpposite=%u topPureAltVram=%u bottomPureAltVram=%u topCarryPureVram=%u bottomCarryPureVram=%u topNoAboveCarry=%u topPlainOppositeNoCurrent=%u bottomPlainOppositeNoCurrent=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
             liveSourceScreenSwap ? 1u : 0u,
@@ -3401,6 +3412,7 @@ bool VulkanOutput::prepareFrameForPresentation(
             bottomPlainStructuredComp7PureAlternatingVramPair ? 1u : 0u,
             topPlainStructuredComp7CarriesPreviousPureVram ? 1u : 0u,
             bottomPlainStructuredComp7CarriesPreviousPureVram ? 1u : 0u,
+            topPlainStructuredComp7PureAlternatingVramNoAboveCarry ? 1u : 0u,
             topPlainStructuredSlotDuringOppositeNoCurrentHandoff ? 1u : 0u,
             bottomPlainStructuredSlotDuringOppositeNoCurrentHandoff ? 1u : 0u,
             topStructuredHandoffCarrySource ? 1u : 0u,
@@ -5014,10 +5026,16 @@ bool VulkanOutput::validateRuntimePath(u32 width, u32 height, const melonDS::Vul
 bool VulkanOutput::waitForFrame(const Frame* frame, u64 timeoutNs)
 {
     if (!initialized || frame == nullptr || frame->backend != FrameBackend::VulkanImage)
+    {
+        waitFailureInvalidFrame++;
         return false;
+    }
 
     if (frame->renderTimelineValue == 0)
+    {
+        waitFailureTimelineZero++;
         return false;
+    }
 
     const u64 waitStartNs = PerfNowNs();
     bool waitSucceeded = false;
@@ -5035,12 +5053,21 @@ bool VulkanOutput::waitForFrame(const Frame* frame, u64 timeoutNs)
     {
         auto iterator = resources.find(const_cast<Frame*>(frame));
         if (iterator == resources.end())
+        {
+            waitFailureResourceMissing++;
             return false;
+        }
         waitSucceeded = vkWaitForFences(device, 1, &iterator->second.submitFence, VK_TRUE, timeoutNs) == VK_SUCCESS;
     }
 
     if (!waitSucceeded)
+    {
+        if (timeoutNs == UINT64_MAX)
+            waitFailureInfinite++;
+        else
+            waitFailureFiniteTimeout++;
         return false;
+    }
 
     waitCpuWindow.Add(PerfNowNs() - waitStartNs);
 
@@ -5257,7 +5284,7 @@ void VulkanOutput::logPerformanceIfNeeded()
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Warn,
-        "VulkanPerf[Output]: compose cpu avg=%.3fms p95=%.3fms max=%.3fms packed avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms",
+        "VulkanPerf[Output]: compose cpu avg=%.3fms p95=%.3fms max=%.3fms packed avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms waitFail(invalid=%llu timelineZero=%llu resourceMissing=%llu finiteTimeout=%llu infinite=%llu)",
         PerfNsToMs(composeSummary.MeanNs),
         PerfNsToMs(composeSummary.P95Ns),
         PerfNsToMs(composeSummary.MaxNs),
@@ -5269,8 +5296,18 @@ void VulkanOutput::logPerformanceIfNeeded()
         PerfNsToMs(waitSummary.MaxNs),
         PerfNsToMs(gpuSummary.MeanNs),
         PerfNsToMs(gpuSummary.P95Ns),
-        PerfNsToMs(gpuSummary.MaxNs)
+        PerfNsToMs(gpuSummary.MaxNs),
+        static_cast<unsigned long long>(waitFailureInvalidFrame),
+        static_cast<unsigned long long>(waitFailureTimelineZero),
+        static_cast<unsigned long long>(waitFailureResourceMissing),
+        static_cast<unsigned long long>(waitFailureFiniteTimeout),
+        static_cast<unsigned long long>(waitFailureInfinite)
     );
+    waitFailureInvalidFrame = 0;
+    waitFailureTimelineZero = 0;
+    waitFailureResourceMissing = 0;
+    waitFailureFiniteTimeout = 0;
+    waitFailureInfinite = 0;
 }
 
 bool VulkanOutput::readResourceImagePixels(

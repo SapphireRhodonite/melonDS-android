@@ -1980,7 +1980,7 @@ bool MelonInstance::presentVulkanFrame(
         && (deviceProfile.IsAdreno || deviceProfile.IsArmMali);
     const bool shouldPreserveRealtimeBacklog =
         shouldUseAdaptiveTemporalBlocking
-        && (deviceProfile.IsArmMali || vulkanTemporal3dNotReadyFrames > 0);
+        && (renderScale > 1 || deviceProfile.IsArmMali || vulkanTemporal3dNotReadyFrames > 0);
     const FrameQueuePolicy candidateQueuePolicy = [&]() -> FrameQueuePolicy {
         FrameQueuePolicy policy = frameQueuePolicy;
         if (shouldProbeRealtimeBacklog && shouldPreserveRealtimeBacklog)
@@ -4441,7 +4441,7 @@ void MelonInstance::logVulkanPerformanceIfNeeded()
     );
     Platform::Log(
         Platform::LogLevel::Warn,
-        "VulkanPerf[Pacing]: mode=%s acquireTimeouts=%llu presentDropped=%llu renderDropped=%llu ffSkipped=%llu backlog=%llu/%llu reusedPrev=%llu stolen=%llu skippedWait=%llu presented=%llu direct=%llu fallback=%llu recoveries=%llu presentMode=%d swapchainImages=%u renderScale=%d outputScale=%d dropCause(stale=%llu steal=%llu deadline=%llu backlogTrim=%llu deferred=%llu) ageMs(present avg=%.3f max=%.3f drop avg=%.3f max=%.3f)",
+        "VulkanPerf[Pacing]: mode=%s acquireTimeouts=%llu presentDropped=%llu renderDropped=%llu ffSkipped=%llu backlog=%llu/%llu reusedPrev=%llu stolen=%llu skippedWait=%llu presented=%llu direct=%llu fallback=%llu recoveries=%llu presentMode=%d swapchainImages=%u renderScale=%d outputScale=%d dropCause(stale=%llu steal=%llu deadline=%llu backlogTrim=%llu deferred=%llu) presentFail(frameWait=%llu composeSubmit=%llu composeWait=%llu missingImage=%llu noConfigured=%llu swapchain=%llu surfaceWait=%llu descriptor=%llu vertex=%llu acquire=%llu record=%llu submit=%llu) ageMs(present avg=%.3f max=%.3f drop avg=%.3f max=%.3f)",
         isFastForwardActive() ? "ff" : "realtime",
         static_cast<unsigned long long>(presenterStats.AcquireTimeouts),
         static_cast<unsigned long long>(queueStats.PresentFramesDroppedByPolicy),
@@ -4465,6 +4465,18 @@ void MelonInstance::logVulkanPerformanceIfNeeded()
         static_cast<unsigned long long>(queueStats.PresentDroppedByDeadline),
         static_cast<unsigned long long>(queueStats.PresentDroppedByBacklogTrim),
         static_cast<unsigned long long>(queueStats.PresentDeferredByDeadline),
+        static_cast<unsigned long long>(presenterStats.FrameWaitFailures),
+        static_cast<unsigned long long>(presenterStats.ComposeSubmitFailures),
+        static_cast<unsigned long long>(presenterStats.ComposeWaitFailures),
+        static_cast<unsigned long long>(presenterStats.MissingFrameImageFailures),
+        static_cast<unsigned long long>(presenterStats.NoConfiguredSurfaceFrames),
+        static_cast<unsigned long long>(presenterStats.SwapchainUnavailableFrames),
+        static_cast<unsigned long long>(presenterStats.SurfaceWaitFailures),
+        static_cast<unsigned long long>(presenterStats.DescriptorUpdateFailures),
+        static_cast<unsigned long long>(presenterStats.VertexUpdateFailures),
+        static_cast<unsigned long long>(presenterStats.AcquireFailures),
+        static_cast<unsigned long long>(presenterStats.RecordFailures),
+        static_cast<unsigned long long>(presenterStats.SubmitFailures),
         presentedFrameAgeAvgMs,
         PerfNsToMs(queueStats.PresentedFrameAgeMaxNs),
         droppedFrameAgeAvgMs,

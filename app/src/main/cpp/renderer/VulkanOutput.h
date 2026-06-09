@@ -562,6 +562,11 @@ private:
     PerfSampleWindow<120> composeCpuWindow;
     PerfSampleWindow<120> waitCpuWindow;
     PerfSampleWindow<120> compositorGpuWindow;
+    u64 waitFailureInvalidFrame = 0;
+    u64 waitFailureTimelineZero = 0;
+    u64 waitFailureResourceMissing = 0;
+    u64 waitFailureFiniteTimeout = 0;
+    u64 waitFailureInfinite = 0;
 };
 
 }

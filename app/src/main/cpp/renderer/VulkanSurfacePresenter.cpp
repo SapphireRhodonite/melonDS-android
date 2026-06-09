@@ -951,8 +951,13 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     if (surfaces.empty())
         return true;
 
+    const bool fastForwardActive = MelonDSAndroid::isFastForwardActive();
+
     if (frame == nullptr || !output.waitForFrame(frame, timeoutNs))
+    {
+        frameWaitFailures++;
         return false;
+    }
 
     const bool hasRequiredDirectHandles =
         inputs.sourceImage != VK_NULL_HANDLE
@@ -1012,16 +1017,33 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     VkImageView frameImageView = VK_NULL_HANDLE;
     if (!directPresentRequested)
     {
-        if (!output.composeAndSubmitFrame(frame, inputs) || !output.waitForFrame(frame, timeoutNs))
+        if (!output.composeAndSubmitFrame(frame, inputs))
+        {
+            composeSubmitFailures++;
             return false;
+        }
+        const bool highResolutionRealtimeFallbackPresent =
+            !fastForwardActive
+            && inputs.scale > 1
+            && !directPresentRequested;
+        const u64 composeWaitTimeoutNs = highResolutionRealtimeFallbackPresent
+            ? UINT64_MAX
+            : timeoutNs;
+        if (!output.waitForFrame(frame, composeWaitTimeoutNs))
+        {
+            composeWaitFailures++;
+            return false;
+        }
 
         frameImage = output.getFrameImage(frame);
         frameImageView = output.getFrameImageView(frame);
         if (frameImage == VK_NULL_HANDLE || frameImageView == VK_NULL_HANDLE)
+        {
+            missingFrameImageFailures++;
             return false;
+        }
     }
 
-    const bool fastForwardActive = MelonDSAndroid::isFastForwardActive();
     const u64 totalStartNs = PerfNowNs();
     const u64 deadlineNs = timeoutNs == UINT64_MAX ? UINT64_MAX : (totalStartNs + timeoutNs);
     u64 descriptorCpuNs = 0;
@@ -1032,19 +1054,24 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     u64 presentCpuNs = 0;
     u64 framePresentTimelineValue = 0;
     bool presentedAnySurface = false;
+    bool sawConfiguredSurface = false;
     for (auto& [surfaceId, surfaceState] : surfaces)
     {
         (void)surfaceId;
 
         if (!surfaceState.configured)
             continue;
+        sawConfiguredSurface = true;
 
         const bool directPresent = directPresentRequested;
         VkImage sampledImage = directPresent ? inputs.sourceImage : frameImage;
         VkImageView sampledImageView = directPresent ? inputs.sourceImageView : frameImageView;
 
         if (!ensureSwapchain(surfaceState))
+        {
+            swapchainUnavailableFrames++;
             continue;
+        }
 
         const u64 remainingBudgetNs = [&]() -> u64 {
             if (fastForwardActive)
@@ -1066,7 +1093,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             continue;
         }
         if (waitResult != VK_SUCCESS)
+        {
+            surfaceWaitFailures++;
             continue;
+        }
 
         bool retroArchApplied = false;
         VulkanFilterMode effectiveFiltering = surfaceState.config.filtering;
@@ -1090,7 +1120,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
 
         const u64 descriptorStartNs = PerfNowNs();
         if (!updateDescriptorSets(surfaceState, sampledImageView, inputs, effectiveFiltering, directPresent))
+        {
+            descriptorUpdateFailures++;
             continue;
+        }
         descriptorCpuNs += PerfNowNs() - descriptorStartNs;
 
         std::vector<DrawCall> drawCalls;
@@ -1102,7 +1135,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
                 directPresent,
                 retroArchApplied,
                 drawCalls))
+        {
+            vertexUpdateFailures++;
             continue;
+        }
         vertexCpuNs += PerfNowNs() - vertexStartNs;
 
         u32 imageIndex = 0;
@@ -1153,6 +1189,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
 
         if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR)
         {
+            acquireFailures++;
             recoverSwapchain(surfaceState, "vkAcquireNextImageKHR");
             continue;
         }
@@ -1160,6 +1197,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         const u64 recordStartNs = PerfNowNs();
         if (!recordSurfaceCommands(surfaceState, surfaceState.framebuffers[imageIndex], inputs, sampledImage, directPresent, drawCalls))
         {
+            recordFailures++;
             recoverSwapchain(surfaceState, "recordSurfaceCommands");
             continue;
         }
@@ -1170,6 +1208,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         u64 surfacePresentTimelineValue = 0;
         if (!submitSurfaceCommands(surfaceState, imageIndex, surfacePresentCpuNs, surfacePresentTimelineValue))
         {
+            submitFailures++;
             recoverSwapchain(surfaceState, "submitSurfaceCommands");
             continue;
         }
@@ -1199,6 +1238,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         frameWallCpuWindow.Add(PerfNowNs() - totalStartNs);
         presentedFrames++;
         logPerformanceIfNeeded();
+    }
+    else if (!sawConfiguredSurface)
+    {
+        noConfiguredSurfaceFrames++;
     }
 
     return presentedAnySurface;
@@ -1233,6 +1276,18 @@ VulkanPresenterPacingStats VulkanSurfacePresenter::takePacingStatsSnapshotAndRes
     stats.AcquireTimeouts = acquireTimeouts;
     stats.PresentSkippedForDeadline = presentSkippedForDeadline;
     stats.SurfaceWaitTimeouts = skippedSurfaceWaits;
+    stats.FrameWaitFailures = frameWaitFailures;
+    stats.ComposeSubmitFailures = composeSubmitFailures;
+    stats.ComposeWaitFailures = composeWaitFailures;
+    stats.MissingFrameImageFailures = missingFrameImageFailures;
+    stats.NoConfiguredSurfaceFrames = noConfiguredSurfaceFrames;
+    stats.SwapchainUnavailableFrames = swapchainUnavailableFrames;
+    stats.SurfaceWaitFailures = surfaceWaitFailures;
+    stats.DescriptorUpdateFailures = descriptorUpdateFailures;
+    stats.VertexUpdateFailures = vertexUpdateFailures;
+    stats.AcquireFailures = acquireFailures;
+    stats.RecordFailures = recordFailures;
+    stats.SubmitFailures = submitFailures;
     stats.PresentedFrames = presentedFrames;
     stats.DirectPresentedFrames = directPresentedFrames;
     stats.FallbackPresentedFrames = fallbackPresentedFrames;
@@ -1243,6 +1298,18 @@ VulkanPresenterPacingStats VulkanSurfacePresenter::takePacingStatsSnapshotAndRes
     acquireTimeouts = 0;
     presentSkippedForDeadline = 0;
     skippedSurfaceWaits = 0;
+    frameWaitFailures = 0;
+    composeSubmitFailures = 0;
+    composeWaitFailures = 0;
+    missingFrameImageFailures = 0;
+    noConfiguredSurfaceFrames = 0;
+    swapchainUnavailableFrames = 0;
+    surfaceWaitFailures = 0;
+    descriptorUpdateFailures = 0;
+    vertexUpdateFailures = 0;
+    acquireFailures = 0;
+    recordFailures = 0;
+    submitFailures = 0;
     swapchainRecoveries = 0;
     presentedFrames = 0;
     directPresentedFrames = 0;
@@ -1950,7 +2017,7 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Warn,
-        "VulkanPerf[Presenter]: mode=%s frame wall avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms acquire avg=%.3fms p95=%.3fms max=%.3fms desc avg=%.3fms vertex avg=%.3fms record avg=%.3fms submit avg=%.3fms present avg=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms presented=%llu direct=%llu fallback=%llu skippedWait=%llu acquireTimeouts=%llu deadlineSkipped=%llu recoveries=%llu presentMode=%d swapchainImages=%u reasons(needsReadback=%llu validation=%llu missingHandles=%llu surfaceCount=%llu)",
+        "VulkanPerf[Presenter]: mode=%s frame wall avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms acquire avg=%.3fms p95=%.3fms max=%.3fms desc avg=%.3fms vertex avg=%.3fms record avg=%.3fms submit avg=%.3fms present avg=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms presented=%llu direct=%llu fallback=%llu skippedWait=%llu acquireTimeouts=%llu deadlineSkipped=%llu recoveries=%llu presentMode=%d swapchainImages=%u reasons(needsReadback=%llu validation=%llu missingHandles=%llu surfaceCount=%llu) fail(frameWait=%llu composeSubmit=%llu composeWait=%llu missingImage=%llu noConfigured=%llu swapchain=%llu surfaceWait=%llu descriptor=%llu vertex=%llu acquire=%llu record=%llu submit=%llu)",
         lastPresentedDirect ? "direct" : "fallback",
         PerfNsToMs(frameWallSummary.MeanNs),
         PerfNsToMs(frameWallSummary.P95Ns),
@@ -1981,13 +2048,37 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
         static_cast<unsigned long long>(fallbackReasonNeedsReadback),
         static_cast<unsigned long long>(fallbackReasonValidationMode),
         static_cast<unsigned long long>(fallbackReasonMissingHandles),
-        static_cast<unsigned long long>(fallbackReasonSurfaceCount)
+        static_cast<unsigned long long>(fallbackReasonSurfaceCount),
+        static_cast<unsigned long long>(frameWaitFailures),
+        static_cast<unsigned long long>(composeSubmitFailures),
+        static_cast<unsigned long long>(composeWaitFailures),
+        static_cast<unsigned long long>(missingFrameImageFailures),
+        static_cast<unsigned long long>(noConfiguredSurfaceFrames),
+        static_cast<unsigned long long>(swapchainUnavailableFrames),
+        static_cast<unsigned long long>(surfaceWaitFailures),
+        static_cast<unsigned long long>(descriptorUpdateFailures),
+        static_cast<unsigned long long>(vertexUpdateFailures),
+        static_cast<unsigned long long>(acquireFailures),
+        static_cast<unsigned long long>(recordFailures),
+        static_cast<unsigned long long>(submitFailures)
     );
 
     fallbackReasonNeedsReadback = 0;
     fallbackReasonValidationMode = 0;
     fallbackReasonMissingHandles = 0;
     fallbackReasonSurfaceCount = 0;
+    frameWaitFailures = 0;
+    composeSubmitFailures = 0;
+    composeWaitFailures = 0;
+    missingFrameImageFailures = 0;
+    noConfiguredSurfaceFrames = 0;
+    swapchainUnavailableFrames = 0;
+    surfaceWaitFailures = 0;
+    descriptorUpdateFailures = 0;
+    vertexUpdateFailures = 0;
+    acquireFailures = 0;
+    recordFailures = 0;
+    submitFailures = 0;
 }
 
 bool VulkanSurfacePresenter::ensureBackgroundTexture(SurfaceState& surfaceState, const VulkanBackgroundImage& backgroundImage)
