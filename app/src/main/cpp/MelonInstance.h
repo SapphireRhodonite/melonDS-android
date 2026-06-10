@@ -260,6 +260,10 @@ private:
     std::array<u32, SoftPackedFrameSnapshot::kLineCount> cachedEngineABottomLineMeta{};
     bool cachedEngineATopValid = false;
     bool cachedEngineABottomValid = false;
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedAtypicalDisplayTopPrimary{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedAtypicalDisplayBottomPrimary{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> cachedAtypicalDisplayTopPrimaryLines{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> cachedAtypicalDisplayBottomPrimaryLines{};
     int framesSinceLastScreenSwapToggle = 1024;
     bool wasInAlternatingMode = false;
     PreparedVulkanDebugSnapshot preparedVulkanDebugSnapshot;

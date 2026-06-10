@@ -392,6 +392,7 @@ private:
         bool hasPreparedInputs{};
         bool replayTopComposedFromPrevious{};
         bool replayBottomComposedFromPrevious{};
+        bool replayTopComposedFromLatest{};
         Frame* previousTopComposedFrame{};
         Frame* previousBottomComposedFrame{};
         bool hasRenderer3dSnapshot{};
